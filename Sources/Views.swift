@@ -45,6 +45,11 @@ struct MainView: View {
                     default: MeetingView(model: model)
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(alignment: .bottomLeading) {
+                        if let step = model.walkthroughStep {
+                            WalkthroughCard(model: model, step: step).padding(20)
+                        }
+                    }
                 footer
             }.background(Palette.canvas)
         }
@@ -52,7 +57,7 @@ struct MainView: View {
         .font(.system(size: 13))
         .frame(minWidth: 1120, minHeight: 730)
         .preferredColorScheme(.light)
-        .onAppear { model.loadSecrets() }
+        .onAppear { model.loadSecrets(); model.offerWalkthrough() }
     }
     private var header: some View {
         HStack(alignment: .center) {
@@ -61,6 +66,10 @@ struct MainView: View {
                 Text(subtitle).font(.system(size: 12)).foregroundStyle(Palette.muted)
             }
             Spacer()
+            Button { model.beginWalkthrough() } label: {
+                Label("使用引导", systemImage: "questionmark.circle")
+                    .font(.system(size: 11)).foregroundStyle(Palette.muted)
+            }.buttonStyle(.plain).padding(.trailing, 10)
             if model.isRunning {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let seconds = Int(context.date.timeIntervalSince(model.startedAt ?? context.date))
@@ -87,7 +96,7 @@ struct MainView: View {
             Text(model.status).font(.system(size: 11))
             Spacer()
             if model.pendingCount > 0 { Text("\(model.pendingCount) 段待处理").font(.system(size: 11)).foregroundStyle(Palette.accent) }
-            Text("听桥 0.2.14").font(.system(size: 11)).foregroundStyle(Palette.muted)
+            Text("听桥 0.2.15").font(.system(size: 11)).foregroundStyle(Palette.muted)
         }.foregroundStyle(Palette.muted).padding(.horizontal, 30).padding(.vertical, 13).background(.white.opacity(0.65))
     }
 }
@@ -322,73 +331,85 @@ private struct SourceLanguagePicker: View {
 struct TranslationSettingsView: View {
     @ObservedObject var model: AppModel
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if model.secretsLoading {
-                    Label("正在等待 macOS 允许读取已保存的翻译密钥，其他功能可以继续使用。", systemImage: "key").font(.system(size: 12)).foregroundStyle(Palette.muted)
-                } else if model.keychainNeedsAccess {
-                    HStack {
-                        Text("已保存的密钥尚未读取；空白输入框不会删除它。").font(.system(size: 12)).foregroundStyle(Palette.muted)
-                        Button("重新读取密钥") { model.loadSecrets() }
-                    }
-                }
-                if !model.notice.isEmpty { NoticeBar(text: model.notice) { model.notice = "" } }
-                SoftCard {
-                    VStack(alignment: .leading, spacing: 18) {
-                        Label("语音识别", systemImage: "waveform").font(.system(size: 16, weight: .semibold))
-                        Text("先识别所选语言，再把原文交给下方的服务翻译。").foregroundStyle(Palette.muted)
-                        Picker("识别引擎", selection: $model.settings.recognitionEngine) {
-                            ForEach(RecognitionEngine.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                        }.disabled(model.languageSelectionLocked)
-                            .onChange(of: model.settings.recognitionEngine) { model.recognitionInfo = "" }
-                        if model.settings.recognitionEngine == .apple {
-                            SourceLanguagePicker(model: model)
-                            Toggle("只在本机识别语音", isOn: $model.settings.localRecognition).toggleStyle(.switch).disabled(model.languageSelectionLocked)
-                            Text("在系统设置的「键盘 → 听写」中管理听写语言。macOS 26 新识别引擎可在这里手动下载当前语言资源。关闭本机模式后，音频可能交给 Apple 在线处理。")
-                                .font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(4)
-                            HStack(spacing: 12) {
-                                Button { model.openAppleLanguageSettings() } label: { Label("打开系统语言设置", systemImage: "arrow.up.right") }
-                                if #available(macOS 26.0, *), model.settings.localRecognition {
-                                    Button(model.installingAppleLanguage ? "正在准备语言…" : "下载当前语言资源") { model.installAppleLanguage() }
-                                        .disabled(model.languageSelectionLocked)
-                                }
-                                Button("检查本机语言支持") { model.checkRecognitionSupport() }.disabled(model.installingAppleLanguage)
-                            }
-                        } else {
-                            Label(model.whisperInstalled ? "large-v3-turbo 已安装 · 声音仅在本机处理" : "首次使用需下载约 1.6 GB 的模型", systemImage: model.whisperInstalled ? "checkmark.circle" : "arrow.down.circle").foregroundStyle(Palette.muted)
-                            HStack {
-                                Button(model.downloadingWhisper ? "正在下载模型…" : model.whisperInstalled ? "已安装" : "下载模型") { model.downloadWhisper() }.disabled(model.whisperInstalled || model.downloadingWhisper || model.isRunning || model.isStarting || model.isStopping)
-                                Button("导入已有模型") { model.importWhisper() }.disabled(model.downloadingWhisper || model.isRunning)
-                                Button("检查本机语言支持") { model.checkRecognitionSupport() }
-                            }
-                            Text("所选语言共用这一份模型。临时原文约每 5 秒更新，低电量模式约 8 秒；识别繁忙时优先处理正式句子。").font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(5)
-                        }
-                        if !model.recognitionInfo.isEmpty { Text(model.recognitionInfo).font(.system(size: 11)).foregroundStyle(Palette.muted) }
-                        Text("短暂停顿继续拼接。句尾明确时停顿约 0.7 秒提交，句尾不明确时等约 1.5 秒。连续发言约 7 秒时优先在自然停顿处切分，最长约 10 秒。临时原文不发送给翻译服务。").font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(5)
-                    }
-                }
-                SoftCard {
-                    VStack(alignment: .leading, spacing: 18) {
-                        Label("翻译服务", systemImage: "character.book.closed").font(.system(size: 16, weight: .semibold))
-                        Picker("服务", selection: $model.settings.provider) { ForEach(TranslationProvider.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
-                        providerFields
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if model.secretsLoading {
+                        Label("正在等待 macOS 允许读取已保存的翻译密钥，其他功能可以继续使用。", systemImage: "key").font(.system(size: 12)).foregroundStyle(Palette.muted)
+                    } else if model.keychainNeedsAccess {
                         HStack {
-                            Button("保存设置") { model.saveSettings() }.buttonStyle(.borderedProminent).tint(Palette.accent)
-                            Button(model.checkingAPI ? "正在测试…" : "测试翻译连接") { model.testAPI() }.disabled(model.checkingAPI)
-                            Spacer()
+                            Text("已保存的密钥尚未读取；空白输入框不会删除它。").font(.system(size: 12)).foregroundStyle(Palette.muted)
+                            Button("重新读取密钥") { model.loadSecrets() }
                         }
-                        if !model.apiResult.isEmpty { Text(model.apiResult).font(.system(size: 12)).foregroundStyle(Palette.accent).textSelection(.enabled) }
                     }
-                }
-                SoftCard {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Label("字幕显示", systemImage: "textformat.size").font(.system(size: 16, weight: .semibold))
-                        HStack { Text("字体大小"); Slider(value: $model.settings.fontSize, in: 18...34, step: 1); Text("\(Int(model.settings.fontSize))").monospacedDigit().frame(width: 30) }
-                        Toggle("同时显示原文", isOn: $model.settings.showOriginal)
-                        Text("翻译时，识别出的文字会发送给你选择的翻译服务。设置在点击“保存设置”后保存到下次启动；密钥放在 macOS 钥匙串，不会同步到手机。").font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(5)
+                    if !model.notice.isEmpty { NoticeBar(text: model.notice) { model.notice = "" } }
+                    SoftCard {
+                        VStack(alignment: .leading, spacing: 18) {
+                            Label("语音识别", systemImage: "waveform").font(.system(size: 16, weight: .semibold))
+                            Text("先识别所选语言，再把原文交给下方的服务翻译。").foregroundStyle(Palette.muted)
+                            Picker("识别引擎", selection: $model.settings.recognitionEngine) {
+                                ForEach(RecognitionEngine.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                            }.disabled(model.languageSelectionLocked)
+                                .onChange(of: model.settings.recognitionEngine) { model.recognitionInfo = "" }
+                            if model.settings.recognitionEngine == .apple {
+                                SourceLanguagePicker(model: model)
+                                Toggle("只在本机识别语音", isOn: $model.settings.localRecognition).toggleStyle(.switch).disabled(model.languageSelectionLocked)
+                                Text("在系统设置的「键盘 → 听写」中管理听写语言。macOS 26 新识别引擎可在这里手动下载当前语言资源。关闭本机模式后，音频可能交给 Apple 在线处理。")
+                                    .font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(4)
+                                HStack(spacing: 12) {
+                                    Button { model.openAppleLanguageSettings() } label: { Label("打开系统语言设置", systemImage: "arrow.up.right") }
+                                    if #available(macOS 26.0, *), model.settings.localRecognition {
+                                        Button(model.installingAppleLanguage ? "正在准备语言…" : "下载当前语言资源") { model.installAppleLanguage() }
+                                            .disabled(model.languageSelectionLocked)
+                                    }
+                                    Button("检查本机语言支持") { model.checkRecognitionSupport() }.disabled(model.installingAppleLanguage)
+                                }
+                            } else {
+                                Label(model.whisperInstalled ? "large-v3-turbo 已安装 · 声音仅在本机处理" : "首次使用需下载约 1.6 GB 的模型", systemImage: model.whisperInstalled ? "checkmark.circle" : "arrow.down.circle").foregroundStyle(Palette.muted)
+                                HStack {
+                                    Button(model.downloadingWhisper ? "正在下载模型…" : model.whisperInstalled ? "已安装" : "下载模型") { model.downloadWhisper() }.disabled(model.whisperInstalled || model.downloadingWhisper || model.isRunning || model.isStarting || model.isStopping)
+                                    Button("导入已有模型") { model.importWhisper() }.disabled(model.downloadingWhisper || model.isRunning)
+                                    Button("检查本机语言支持") { model.checkRecognitionSupport() }
+                                }
+                                Text("所选语言共用这一份模型。临时原文约每 5 秒更新，低电量模式约 8 秒；识别繁忙时优先处理正式句子。").font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(5)
+                            }
+                            if !model.recognitionInfo.isEmpty { Text(model.recognitionInfo).font(.system(size: 11)).foregroundStyle(Palette.muted) }
+                            Text("短暂停顿继续拼接。句尾明确时停顿约 0.7 秒提交，句尾不明确时等约 1.5 秒。连续发言约 7 秒时优先在自然停顿处切分，最长约 10 秒。临时原文不发送给翻译服务。").font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(5)
+                        }
+                    }.id("recognition-settings")
+                    SoftCard {
+                        VStack(alignment: .leading, spacing: 18) {
+                            Label("翻译服务", systemImage: "character.book.closed").font(.system(size: 16, weight: .semibold))
+                            Picker("服务", selection: $model.settings.provider) { ForEach(TranslationProvider.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
+                            providerFields
+                            HStack {
+                                Button("保存设置") { model.saveSettings() }.buttonStyle(.borderedProminent).tint(Palette.accent)
+                                Button(model.checkingAPI ? "正在测试…" : "测试翻译连接") { model.testAPI() }.disabled(model.checkingAPI)
+                                Spacer()
+                            }
+                            if !model.apiResult.isEmpty { Text(model.apiResult).font(.system(size: 12)).foregroundStyle(Palette.accent).textSelection(.enabled) }
+                        }
+                    }.id("translation-service")
+                    SoftCard {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Label("字幕显示", systemImage: "textformat.size").font(.system(size: 16, weight: .semibold))
+                            HStack { Text("字体大小"); Slider(value: $model.settings.fontSize, in: 18...34, step: 1); Text("\(Int(model.settings.fontSize))").monospacedDigit().frame(width: 30) }
+                            Toggle("同时显示原文", isOn: $model.settings.showOriginal)
+                            Text("翻译时，识别出的文字会发送给你选择的翻译服务。设置在点击“保存设置”后保存到下次启动；密钥放在 macOS 钥匙串，不会同步到手机。").font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(5)
+                        }
                     }
-                }
-            }.padding(28).frame(maxWidth: 900, alignment: .leading)
+                }.padding(28).frame(maxWidth: 900, alignment: .leading)
+            }
+            .onAppear { scrollToWalkthrough(using: proxy) }
+            .onChange(of: model.walkthroughStep) { scrollToWalkthrough(using: proxy) }
+        }
+    }
+
+    private func scrollToWalkthrough(using proxy: ScrollViewProxy) {
+        guard let step = model.walkthroughStep, step == .recognition || step == .translation else { return }
+        DispatchQueue.main.async {
+            guard model.walkthroughStep == step, model.section == "翻译设置" else { return }
+            proxy.scrollTo(step == .translation ? "translation-service" : "recognition-settings", anchor: .top)
         }
     }
     @ViewBuilder private var providerFields: some View {
@@ -404,6 +425,13 @@ struct TranslationSettingsView: View {
             if model.settings.useTranslationContext { Stepper("参考前 \(model.settings.translationContextCount) 段", value: $model.settings.translationContextCount, in: 1...6) }
             Text("上文仅帮助理解，只输出当前段的译文。启用后，上文也会发给 B 站翻译服务。").font(.system(size: 11)).foregroundStyle(Palette.muted)
         case .custom:
+            VStack(alignment: .leading, spacing: 7) {
+                Label("低成本翻译推荐", systemImage: "sparkles").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.accent)
+                Text("模力方舟 · \(TranslationRecommendation.model)").font(.system(size: 13, weight: .medium))
+                Text(TranslationRecommendation.cost).font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(4)
+                Link("查看模型与价格 · ai.gitee.com ↗", destination: TranslationRecommendation.url).font(.system(size: 11))
+            }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Palette.accent.opacity(0.055), in: RoundedRectangle(cornerRadius: 11))
             TextField("API 基础地址，例如 https://你的服务商/v1", text: $model.settings.baseURL).textFieldStyle(.roundedBorder)
             TextField("模型名称（填写服务商提供的名称）", text: $model.settings.model).textFieldStyle(.roundedBorder)
             SecureField("API Key（本机服务可留空）", text: $model.customKey).textFieldStyle(.roundedBorder)

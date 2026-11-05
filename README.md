@@ -58,6 +58,14 @@ Apple recognition availability depends on macOS and installed language resources
 
 The Android app is the caption companion. Recognition, translation requests, API keys, and transcript storage live on the Mac.
 
+## A short guided start
+
+A five-step tour introduces capture, recognition, translation, phone captions, and the meeting assistant. **Next** opens the relevant menu and scrolls to its controls. Skip or close it at any time, then reopen it from **Usage guide** or the Help menu.
+
+A cost-conscious starting point is **Whisper large-v3-turbo** for local recognition and **Moark / Gitee AI Hy-MT2-30B-A3B** for custom text translation, with four preceding segments of context. The personal usage reference is around **CNY 0.10 for two hours**. This is an estimate based on usage, not an hourly package or a guaranteed minimum. Actual cost depends on speaking volume, context, token usage, and provider prices. [Model and pricing](https://ai.gitee.com/serverless-api?model=Hy-MT2-30B-A3B)
+
+Use a general conversation model, such as DeepSeek, for the separate assistant API. Start with low reasoning effort and a maximum of three sentences. Saved assistant keys show a fixed asterisk placeholder and a saved indicator when you return to settings. The real key stays in Keychain.
+
 ## Start a session
 
 1. Open TingQiao and choose **online** or **in-person** mode.
@@ -71,7 +79,7 @@ In online mode, TingQiao reads playback audio through ScreenCaptureKit and leave
 
 ## Build from source
 
-The repository includes **Mac 0.2.14** and **Android 0.3.2** sources. Build output, model weights, credentials, and signing keys are excluded.
+The repository includes **Mac 0.2.15** and **Android 0.3.2** sources. Build output, model weights, credentials, and signing keys are excluded.
 
 ### Mac
 

@@ -28,6 +28,9 @@ struct TingQiaoApp: App {
             .commands {
                 CommandGroup(replacing: .newItem) {}
                 CommandGroup(after: .appInfo) { Button("翻译设置…") { model.section = "翻译设置" }.keyboardShortcut(",", modifiers: .command) }
+                CommandGroup(replacing: .help) {
+                    Button("听桥使用引导") { model.beginWalkthrough() }
+                }
             }
         MenuBarExtra("听桥", systemImage: model.isRunning ? "waveform.circle.fill" : "waveform.circle") {
             Text(model.status)

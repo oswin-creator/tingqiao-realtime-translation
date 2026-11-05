@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import LocalAuthentication
 
 enum MeetingMode: String, Codable, CaseIterable {
     case online = "线上会议", inPerson = "线下会议"
@@ -245,6 +246,27 @@ struct BridgeError: LocalizedError {
 }
 
 enum SecretStore {
+    // Check item metadata only. This never loads the saved key into a text field
+    // and never opens an authentication prompt just to show a saved indicator.
+    static func contains(_ account: String) throws -> Bool {
+        let authentication = LAContext()
+        authentication.interactionNotAllowed = true
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "cn.tingqiao.bridge",
+            kSecAttrAccount as String: account,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecUseAuthenticationContext as String: authentication
+        ]
+        let status = SecItemCopyMatching(query as CFDictionary, nil)
+        if status == errSecItemNotFound { return false }
+        guard status == errSecSuccess else {
+            throw BridgeError("暂未确认钥匙串里的密钥，请重新检查或在系统提示中允许访问。", retryable: false)
+        }
+        return true
+    }
+
     static func read(_ account: String) throws -> String {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "cn.tingqiao.bridge", kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var result: CFTypeRef?

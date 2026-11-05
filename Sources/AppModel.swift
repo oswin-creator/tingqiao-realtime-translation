@@ -30,6 +30,7 @@ final class AppModel: ObservableObject {
     @Published var customKey = ""
     @Published var googleKey = ""
     @Published var section = "会议翻译"
+    @Published private(set) var walkthroughStep: WalkthroughStep?
     @Published var stylePreview = CommandLine.arguments.contains("--ui-preview")
     @Published var recognitionInfo = ""
     @Published var installingAppleLanguage = false
@@ -98,6 +99,35 @@ final class AppModel: ObservableObject {
     var currentCaptureEpoch: UUID { captureEpoch }
     var currentPipelineGeneration: Int { pipelineGeneration }
     var languageSelectionLocked: Bool { isRunning || isStarting || isStopping || installingAppleLanguage }
+
+    func offerWalkthrough() {
+        guard backgroundWorkEnabled, walkthroughStep == nil, !isRunning, !isStarting,
+              !CommandLine.arguments.contains("--ui-preview"),
+              !CommandLine.arguments.contains("--connection-check"),
+              !UserDefaults.standard.bool(forKey: "walkthrough.completed.v1") else { return }
+        beginWalkthrough()
+    }
+
+    func beginWalkthrough() {
+        walkthroughStep = .meeting
+        section = WalkthroughStep.meeting.section
+    }
+
+    func moveWalkthrough(_ offset: Int) {
+        guard let current = walkthroughStep else { return }
+        let next = current.rawValue + offset
+        if next >= WalkthroughStep.allCases.count {
+            finishWalkthrough()
+        } else if let step = WalkthroughStep(rawValue: next) {
+            walkthroughStep = step
+            section = step.section
+        }
+    }
+
+    func finishWalkthrough() {
+        walkthroughStep = nil
+        UserDefaults.standard.set(true, forKey: "walkthrough.completed.v1")
+    }
     var allCaptions: [Caption] {
         var result = jobs.filter { $0.deletedAt == nil }.compactMap { job -> Caption? in
             if !job.original.isEmpty { return Caption(id: job.id, date: job.created, original: job.original, translated: job.translated) }

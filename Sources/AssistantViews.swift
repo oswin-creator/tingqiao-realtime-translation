@@ -96,6 +96,10 @@ private final class AssistantSettingsForm: ObservableObject {
     @Published var key = ""
     @Published var feedback = ""
     @Published var saving = false
+    @Published var savedAccount: String?
+    @Published var checkingKey = false
+    @Published var keyStatus = ""
+    var keyLookup: Task<Void, Never>?
 }
 
 struct AssistantSettingsView: View {
@@ -120,7 +124,21 @@ struct AssistantSettingsView: View {
                         }
                         GridRow {
                             Text("API Key")
-                            SecureField("输入新密钥，留空沿用这个地址的已保存密钥", text: $form.key).accessibilityLabel("问答 API Key")
+                            VStack(alignment: .leading, spacing: 5) {
+                                SecureField(form.savedAccount == nil ? "输入 API Key" : "********（已保存，输入可替换）", text: $form.key)
+                                    .accessibilityLabel("问答 API Key")
+                                if form.checkingKey {
+                                    Text("正在检查已保存的密钥…").font(.system(size: 10)).foregroundStyle(Palette.muted)
+                                } else if form.savedAccount != nil && form.key.isEmpty {
+                                    Label("此接口的密钥已保存在钥匙串", systemImage: "checkmark.shield")
+                                        .font(.system(size: 10)).foregroundStyle(Palette.mint)
+                                } else if !form.keyStatus.isEmpty {
+                                    HStack {
+                                        Text(form.keyStatus)
+                                        Button("重新检查") { checkSavedKey() }.buttonStyle(.plain).foregroundStyle(Palette.accent)
+                                    }.font(.system(size: 10)).foregroundStyle(Palette.muted)
+                                }
+                            }
                         }
                         GridRow {
                             Text("思考强度")
@@ -144,7 +162,29 @@ struct AssistantSettingsView: View {
                     }
                 }.foregroundStyle(Palette.ink)
             }.padding(26)
-        }.onAppear { form.draft = model.assistantSettings }
+        }.onAppear { form.draft = model.assistantSettings; checkSavedKey() }
+            .onChange(of: form.draft.baseURL) { checkSavedKey() }
+            .onDisappear { form.keyLookup?.cancel() }
+    }
+
+    private func checkSavedKey() {
+        form.keyLookup?.cancel()
+        form.savedAccount = nil
+        form.keyStatus = ""
+        guard let account = try? form.draft.keyAccountForEndpoint() else { form.checkingKey = false; return }
+        form.checkingKey = true
+        form.keyLookup = Task {
+            let result = await Task.detached { Result { try SecretStore.contains(account) } }.value
+            guard !Task.isCancelled, (try? form.draft.keyAccountForEndpoint()) == account else { return }
+            form.checkingKey = false
+            switch result {
+            case .success(let exists):
+                form.savedAccount = exists ? account : nil
+                form.keyStatus = exists ? "" : "此接口尚未保存密钥，本机免密接口可留空。"
+            case .failure:
+                form.keyStatus = "暂未确认已保存的密钥，可重新检查。"
+            }
+        }
     }
 
     private func save() {
@@ -164,6 +204,7 @@ struct AssistantSettingsView: View {
                 form.draft = configuration
                 form.key = ""
                 form.feedback = "已保存。"
+                checkSavedKey()
             } catch { form.feedback = error.localizedDescription }
         }
     }
