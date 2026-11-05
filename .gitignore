@@ -1,0 +1,47 @@
+# Build output, local models, dependencies and test journals
+/build/
+/release/
+/output/
+/.qa-data/
+/android/build/
+/android/libs/*.jar
+/Resources/AppIcon.icns
+*.app/
+*.apk
+*.aab
+*.dmg
+*.zip
+*.wav
+*.aiff
+*.m4a
+*.mp3
+ggml-*.bin
+*.gguf
+jobs.json
+Drafts/
+Audio/
+
+# Credentials, signing material and local configuration
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.keystore
+*.jks
+*.keychain
+*.keychain-db
+.local-signing/
+local.properties
+*.mobileprovision
+*.provisionprofile
+
+# Editor and system files
+.DS_Store
+.idea/
+.vscode/
+.gradle/
+__pycache__/
+*.pyc
