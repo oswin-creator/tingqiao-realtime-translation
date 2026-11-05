@@ -2,6 +2,12 @@
 https://github.com/ggml-org/whisper.cpp
 Whisper 模型由 OpenAI 发布，MIT License.
 https://github.com/openai/whisper
+Silero VAD v5.1.2，Copyright (c) 2020-present Silero Team，MIT License.
+https://github.com/snakers4/silero-vad
+使用 ggml-org/whisper-vad 提供的 ggml-silero-v5.1.2.bin 转换模型，仅在本机处理音频。
 安卓二维码识别使用 ZXing Core 3.5.3, Apache License 2.0.
 https://github.com/zxing/zxing
 完整许可随源代码见 docs/licenses。
+内置专业术语包包含 10,018 个 Wikidata 概念，CC0-1.0；快照日期 2026-11-05。应用支持独立的本地更新包及用户自定义词库。
+https://www.wikidata.org/wiki/Wikidata:Licensing
+Wikidata 标签不保证是经专业审核的译名；来源、修订和语言覆盖见本地词库生成报告。

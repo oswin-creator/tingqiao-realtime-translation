@@ -84,9 +84,9 @@ Apple 识别范围取决于系统和语言资源。在「翻译设置 → 语音
 
 | 平台 | 下载文件 | 系统要求 |
 | --- | --- | --- |
-| Mac | [听桥 0.2.16 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.16/TingQiao-macOS-arm64-0.2.16.dmg) | Apple 芯片，macOS 14+ |
-| 安卓随身字幕 | [听桥字幕 0.3.2 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.16/TingQiao-Captions-Android-0.3.2.apk) | Android 8+ |
-| 文件校验 | [SHA-256 校验值](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.16/SHA256SUMS.txt) | 可用于核对下载完整性 |
+| Mac | [听桥 0.2.22 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.22/TingQiao-macOS-arm64-0.2.22.dmg) | Apple 芯片，macOS 14+ |
+| 安卓随身字幕 | [听桥字幕 0.3.2 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.22/TingQiao-Captions-Android-0.3.2.apk) | Android 8+ |
+| 文件校验 | [SHA-256 校验值](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.22/SHA256SUMS.txt) | 可用于核对下载完整性 |
 
 Mac 打开 DMG，把听桥拖进「应用程序」。安卓下载 APK 安装。也可以让手机与电脑连接同一个 Wi-Fi，用手机相机扫描 Mac 二维码，在浏览器直接看字幕，无需下载 App。
 
@@ -94,9 +94,19 @@ Mac 测试包采用 ad-hoc 签名，尚未经过 Apple 公证，首次打开可�
 
 Whisper 模型在 App 中按需单独下载。
 
+## 新版设置与内置词库 · 0.2.22
+
+翻译设置重新整理为「语音识别、翻译接口、术语与语境、字幕显示」四个平级分页，保存按钮固定在底部，详细收音规则集中到一个说明入口。
+
+软件内置 **10,018 个 Wikidata 专业概念**，与人工校订词去重后默认 **10,041 条**，安装后即可离线检索。保留 JSON 词库导入、导出，自定义词优先；通过校验的本机更新包可替代内置快照。
+
+术语提示用于 Index 与自定义接口的文字翻译，不直接修改 Whisper 听写，也不改变当前 Google 请求。每次仅发送少量相关项，预算约 300 Token（估算）、最多 900 UTF-8 字节。各语言覆盖不同，不能保证译名全部准确。数据来自 Wikidata，CC0-1.0，快照日期 2026-11-05，详见[词库说明](docs/TERMINOLOGY.md)。
+
+![翻译设置，配置与内容均为示例](docs/images/settings.png)
+
 ## 从源码构建
 
-本仓库包含 **Mac 0.2.16** 和 **Android 0.3.2** 源码。
+本仓库包含 **Mac 0.2.22** 和 **Android 0.3.2** 源码。
 
 ### Mac
 

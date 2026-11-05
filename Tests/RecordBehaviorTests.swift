@@ -59,7 +59,9 @@ import Foundation
         let legacyJob = initial[0]
         let oldJSON = try JSONEncoder().encode(legacyJob)
         check(try! JSONDecoder().decode(AudioJob.self, from: oldJSON).deletedAt == nil, "old jobs migrate without deletedAt")
-        let configurationBeforeTour = try JSONEncoder().encode(reopened.settings)
+        let settingsEncoder = JSONEncoder()
+        settingsEncoder.outputFormatting = .sortedKeys // Dictionary ordering is not a settings change.
+        let configurationBeforeTour = try settingsEncoder.encode(reopened.settings)
         let recordsBeforeTour = reopened.jobs.map(\.id)
         reopened.beginWalkthrough()
         for step in WalkthroughStep.allCases {
@@ -70,7 +72,7 @@ import Foundation
         check(reopened.walkthroughStep == .phone && reopened.section == "手机字幕", "guide can go back")
         reopened.beginWalkthrough()
         check(reopened.walkthroughStep == .meeting, "guide can restart")
-        check(try! JSONEncoder().encode(reopened.settings) == configurationBeforeTour && reopened.jobs.map(\.id) == recordsBeforeTour, "guide does not change settings or records")
+        check(try! settingsEncoder.encode(reopened.settings) == configurationBeforeTour && reopened.jobs.map(\.id) == recordsBeforeTour, "guide does not change settings or records")
         let missingKeyExists = try SecretStore.contains("test-missing-assistant-key-\(UUID())")
         check(!missingKeyExists, "metadata lookup safely reports an absent key")
         await model.shutdown(); await reopened.shutdown()

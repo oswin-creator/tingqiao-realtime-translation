@@ -83,9 +83,9 @@ In online mode, TingQiao reads playback audio through ScreenCaptureKit and leave
 
 | Platform | Download | Requirements |
 | --- | --- | --- |
-| Mac | [TingQiao 0.2.16 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.16/TingQiao-macOS-arm64-0.2.16.dmg) | Apple silicon, macOS 14+ |
-| Android companion | [TingQiao Captions 0.3.2 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.16/TingQiao-Captions-Android-0.3.2.apk) | Android 8+ |
-| Integrity | [SHA-256 checksums](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.16/SHA256SUMS.txt) | Verify downloaded files |
+| Mac | [TingQiao 0.2.22 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.22/TingQiao-macOS-arm64-0.2.22.dmg) | Apple silicon, macOS 14+ |
+| Android companion | [TingQiao Captions 0.3.2 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.22/TingQiao-Captions-Android-0.3.2.apk) | Android 8+ |
+| Integrity | [SHA-256 checksums](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.22/SHA256SUMS.txt) | Verify downloaded files |
 
 Open the DMG and drag TingQiao to Applications. Install the APK on Android, or scan the Mac's Wi-Fi QR code with a phone camera and read captions directly in the browser. Mac and phone must share the same Wi-Fi for browser access.
 
@@ -93,9 +93,19 @@ The Mac preview has an ad-hoc signature and is not Apple-notarized. macOS may bl
 
 Whisper weights are downloaded separately, on demand, from the app settings.
 
+## Settings and terminology · 0.2.22
+
+Translation settings now use four consistent tabs: recognition, translation API, terminology/context, and caption display. Save remains visible at the bottom. Detailed audio rules are available from one information button.
+
+The app includes **10,018 Wikidata concepts** plus curated seeds, yielding **10,041 default entries after deduplication**. No extra terminology download or online lookup is required. Custom JSON import/export remains available; user terms take priority. A verified local update can replace the bundled snapshot.
+
+Term hints augment Index and custom translation requests, not Whisper transcripts or the current Google interfaces. Only a few relevant terms are sent, capped at roughly 300 estimated tokens / 900 UTF-8 bytes. The pack has uneven language coverage; it is not a guarantee of correct translations. Data: Wikidata, CC0-1.0, snapshot 2026-11-05. See [terminology notes](docs/TERMINOLOGY.md).
+
+![Translation settings, synthetic configuration](docs/images/settings.png)
+
 ## Build from source
 
-The repository includes **Mac 0.2.16** and **Android 0.3.2** sources. Build output, model weights, credentials, and signing keys are excluded.
+The repository includes **Mac 0.2.22** and **Android 0.3.2** sources. Build output, Whisper recognition weights, credentials, and signing keys are excluded. The small licensed Silero detector and public Wikidata snapshot are included.
 
 ### Mac
 

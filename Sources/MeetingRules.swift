@@ -10,6 +10,7 @@ struct SpeechWindow {
 }
 
 enum MeetingRules {
+    static let previewInterval = 4.0
     static let completePause = 0.7
     static let incompletePause = 1.5
     static let earliestNaturalCut = 7.0

@@ -33,6 +33,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var walkthroughStep: WalkthroughStep?
     @Published var stylePreview = CommandLine.arguments.contains("--ui-preview")
     @Published var recognitionInfo = ""
+    @Published var vadStatus = "Silero VAD · 开始收音时检查"
+    @Published var terminologyCount = 0
+    @Published var terminologyInfo = ""
+    @Published var terminologySourceInfo = ""
+    @Published var terminologyLoading = false
     @Published var installingAppleLanguage = false
     @Published var whisperInstalled = WhisperEngine.installed
     @Published var downloadingWhisper = false
@@ -77,6 +82,7 @@ final class AppModel: ObservableObject {
     private var timer: Timer?
     private var captureRetry: Task<Void, Never>?
     private var captureSettings: AppSettings?
+    private var terminologyService: TerminologyService?
     private var sessionID = UUID()
     private var sleepActivity: NSObjectProtocol?
     private var storageHealthy = true
@@ -164,6 +170,7 @@ final class AppModel: ObservableObject {
         do {
             let storage = try providedStore ?? SessionStore()
             store = storage
+            terminologyService = TerminologyService(root: storage.root)
             jobs = try storage.load()
             for url in try storage.recoverOrphanAudio(known: jobs) {
                 let date = (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date()
@@ -173,7 +180,7 @@ final class AppModel: ObservableObject {
             jobs.sort { $0.created < $1.created }
             try storage.save(jobs)
         } catch { storageHealthy = false; notice = "历史数据无法读取或保存。为保护原文件，已暂停处理。请打开数据文件夹检查：\(error.localizedDescription)" }
-        if startBackgroundWork { refreshDevices() }
+        if startBackgroundWork { refreshDevices(); Task { await refreshTerminology() } }
         if jobs.contains(where: { $0.deletedAt == nil && $0.stage == .recognize }) && notice.isEmpty { notice = "有上次会议的音频等待识别，点击“重试待处理”可继续。" }
         server.onReady = { [weak self] port in Task { @MainActor in guard let self, self.phoneEnabled else { return }; self.phoneURL = self.server.pairingURL(port: port); self.publishPhone() } }
         server.onError = { [weak self] message in Task { @MainActor in self?.notice = message; self?.phoneEnabled = false; self?.phoneURL = "" } }
@@ -301,6 +308,7 @@ final class AppModel: ObservableObject {
             }
         }
         engine.segmenter.onFailure = { [weak self] message in Task { @MainActor in self?.storageHealthy = false; self?.notice = message; self?.stop() } }
+        engine.segmenter.onVADStatus = { [weak self] message in Task { @MainActor in self?.vadStatus = message } }
         engine.onFailure = { [weak self] message in Task { @MainActor in self?.captureFailed(message) } }
         return engine
     }
@@ -404,10 +412,16 @@ final class AppModel: ObservableObject {
             let context = (job.translationRepetitionRetries ?? 0) == 0 && (settings.provider == .custom || settings.provider == .indexTranslate)
                 ? TranslationHistory.context(before: job, in: jobs, limit: settings.effectiveTranslationContextCount)
                 : []
+            let supportsHints = settings.provider == .custom || settings.provider == .indexTranslate
+            let useHints = settings.useTerminology && supportsHints && (job.translationRepetitionRetries ?? 0) == 0
+            let recentTerms = useHints && settings.useTerminologyMemory ? TerminologyService.recent(before: job, in: jobs) : []
+            let topic = settings.terminologyTopic, memory = settings.useTerminologyMemory
             translationTasks[job.id] = Task {
                 defer { translationsActive.remove(job.id); translationTasks.removeValue(forKey: job.id); pump() }
                 do {
-                    let translation = try await client.translate(job.original, language: job.language, targetLanguage: job.resolvedTargetLanguage, context: context)
+                    let hint = useHints ? await terminologyService?.hint(text: job.original, source: MeetingLanguage(rawValue: job.language)?.translationCode ?? job.language, target: job.resolvedTargetLanguage.translationCode, recent: recentTerms, topic: topic, now: job.created, memory: memory) : nil
+                    guard !Task.isCancelled, generation == pipelineGeneration else { return }
+                    let translation = try await client.translate(job.original, language: job.language, targetLanguage: job.resolvedTargetLanguage, context: context, terminology: hint)
                     guard !Task.isCancelled, generation == pipelineGeneration else { return }
                     _ = commitTranslation(translation, for: job.id, generation: generation)
                 } catch { if generation == pipelineGeneration { failed(job.id, error: error) } }
@@ -606,6 +620,45 @@ final class AppModel: ObservableObject {
         catch { notice = "导出失败：\(error.localizedDescription)" }
     }
     func openDataFolder() { if let store { NSWorkspace.shared.open(store.root) } }
+    func refreshTerminology() async {
+        guard let terminologyService else { return }
+        let result = await terminologyService.load()
+        terminologyCount = result.0; terminologyInfo = result.1
+        terminologySourceInfo = await terminologyService.sourceSummary
+        if settings.useTerminology { await terminologyService.prepare(source: MeetingLanguage(rawValue: settings.language)?.translationCode ?? settings.language) }
+    }
+    func reloadTerminology() {
+        guard !terminologyLoading, let terminologyService else { return }
+        terminologyLoading = true
+        Task {
+            defer { terminologyLoading = false }
+            _ = await terminologyService.reload()
+            await refreshTerminology()
+        }
+    }
+    func importTerminology() {
+        guard !terminologyLoading, let terminologyService else { return }
+        let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.allowsMultipleSelection = false
+        panel.message = "导入用户自定义词库，优先于 Wikidata 与内置词条；同 ID 或同领域的相同英文标准词覆盖低优先级版本。替换前会保留本地备份。"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        terminologyLoading = true
+        Task {
+            defer { terminologyLoading = false }
+            do { terminologyCount = try await terminologyService.importLibrary(url); terminologyInfo = "词库已导入；仅检索出的少量术语会发送给支持提示的翻译服务。" }
+            catch { terminologyInfo = "导入失败，原词库未覆盖：\(error.localizedDescription)" }
+        }
+    }
+    func exportTerminology() {
+        guard !terminologyLoading, let terminologyService else { return }
+        let panel = NSSavePanel(); panel.allowedContentTypes = [.json]; panel.nameFieldStringValue = "听桥专业术语库.json"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        terminologyLoading = true
+        Task {
+            defer { terminologyLoading = false }
+            do { let data = try await terminologyService.exportLibrary(); try data.write(to: url, options: .atomic); terminologyInfo = "已导出完整词库，可编辑后重新导入。" }
+            catch { terminologyInfo = "导出失败：\(error.localizedDescription)" }
+        }
+    }
     func clearHistory() {
         guard !isClearing, !visibleJobs.isEmpty || draftCaption != nil else { return }
         Task { await clearRecords() }

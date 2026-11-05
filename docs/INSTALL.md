@@ -30,8 +30,8 @@ Download and install the APK for Android 8 or later. Connect it to the Mac over 
 Release 附带 SHA256SUMS.txt。可在下载目录运行以下命令计算哈希，与对应文件名的值比较。
 
 ~~~sh
-shasum -a 256 TingQiao-macOS-arm64-0.2.16.dmg
+shasum -a 256 TingQiao-macOS-arm64-0.2.22.dmg
 shasum -a 256 TingQiao-Captions-Android-0.3.2.apk
 ~~~
 
-安装包包含程序及第三方许可。模型权重、个人 API 密钥、会议记录、设备配对凭据和签名私钥不包含在安装包里。
+安装包包含程序及第三方许可。Whisper 识别模型权重、个人 API 密钥、会议记录、设备配对凭据和签名私钥不包含在安装包里。

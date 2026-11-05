@@ -64,6 +64,9 @@ struct AppSettings: Codable {
     var fontSize = 24.0
     var useTranslationContext = true
     var translationContextCount = 4
+    var useTerminology = true
+    var useTerminologyMemory = true
+    var terminologyTopic = ""
     var floatingOpacity = 1.0
     var floatingAlwaysOnTop = true
     var floatingFontSize = 24.0
@@ -80,6 +83,7 @@ struct AppSettings: Codable {
         case mode, language, targetLanguage, microphoneID, applicationID, provider, baseURL, model
         case recognitionEngine, localRecognition, showOriginal, fontSize, useTranslationContext, translationContextCount
         case floatingOpacity, floatingAlwaysOnTop, floatingFontSize
+        case useTerminology, useTerminologyMemory, terminologyTopic
     }
 }
 
@@ -102,6 +106,9 @@ extension AppSettings {
         fontSize = try values.decodeIfPresent(Double.self, forKey: .fontSize) ?? fontSize
         useTranslationContext = try values.decodeIfPresent(Bool.self, forKey: .useTranslationContext) ?? useTranslationContext
         translationContextCount = try values.decodeIfPresent(Int.self, forKey: .translationContextCount) ?? translationContextCount
+        useTerminology = try values.decodeIfPresent(Bool.self, forKey: .useTerminology) ?? useTerminology
+        useTerminologyMemory = try values.decodeIfPresent(Bool.self, forKey: .useTerminologyMemory) ?? useTerminologyMemory
+        terminologyTopic = String((try values.decodeIfPresent(String.self, forKey: .terminologyTopic) ?? "").prefix(120))
         floatingOpacity = min(1, max(0.35, try values.decodeIfPresent(Double.self, forKey: .floatingOpacity) ?? floatingOpacity))
         floatingAlwaysOnTop = try values.decodeIfPresent(Bool.self, forKey: .floatingAlwaysOnTop) ?? floatingAlwaysOnTop
         floatingFontSize = min(48, max(12, try values.decodeIfPresent(Double.self, forKey: .floatingFontSize) ?? fontSize))

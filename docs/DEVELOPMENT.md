@@ -31,7 +31,7 @@ Third-party license texts live in docs/licenses and application resources. Build
 
 The segmenter maintains the current uncommitted audio. A clearly completed sentence may submit after about 0.7 seconds of silence, an unclear ending after about 1.5 seconds. Around 7 seconds it prefers a natural pause, with a 10-second cap. Forced cuts preserve about 0.5 seconds of overlap.
 
-Whisper previews normally update around every 5 seconds, or 8 seconds in low-power mode. Busy recognition prioritizes final segments. Confirmed text is checked for repetition before replacing a usable preview. Recognition errors have a bounded automatic retry, with blocked audio retained for manual retry.
+Whisper previews attempt an update every 4 seconds, independent of low-power mode. Busy recognition prioritizes final segments. Confirmed text is checked for repetition before replacing a usable preview. Recognition errors have a bounded automatic retry, with blocked audio retained for manual retry.
 
 These rules reduce latency and error propagation, with limits in noisy, overlapping, or low-volume speech.
 

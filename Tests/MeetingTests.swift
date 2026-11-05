@@ -106,6 +106,21 @@ import CoreMedia
         segmenter.flush()
         let finalDuration = windows.filter(\.isFinal).map(\.duration).reduce(0, +)
         check(abs(finalDuration - 8.5) < 0.11, "natural cut preserves audio after the pause")
+
+        let cadence = AudioSegmenter(directory: root.appendingPathComponent("Cadence"))
+        var previews: [SpeechWindow] = []
+        cadence.onWindow = { if !$0.isFinal { previews.append($0) } }
+        let block = [Float](repeating: 0.1, count: 1600)
+        check(MeetingRules.previewInterval == 4, "preview cadence is four seconds independent of system power mode")
+        for _ in 0..<39 { cadence.appendPCM(block) }
+        check(previews.isEmpty, "no preview before four seconds")
+        cadence.appendPCM(block)
+        check(previews.count == 1 && abs(previews[0].duration - 4) < 0.001, "first preview triggers at four seconds")
+        for _ in 0..<39 { cadence.appendPCM(block) }
+        check(previews.count == 1, "next preview waits another four seconds")
+        cadence.appendPCM(block)
+        check(previews.count == 2 && abs(previews[1].duration - 8) < 0.001, "second preview triggers at eight seconds")
+        cadence.flush()
     }
     @MainActor static func indexTests() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [IndexMock.self]

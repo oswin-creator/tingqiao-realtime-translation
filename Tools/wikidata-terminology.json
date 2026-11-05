@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "domains": [
+    {"id":"statistics","topic":"Q12483","roots":["Q210832","Q200726","Q12718609","Q3284399"]},
+    {"id":"computer-science","topic":"Q21198","roots":["Q8366","Q175263","Q181156","Q188267","Q132364","Q15836568","Q115215420","Q3457057"]},
+    {"id":"business","topic":"Q8134","roots":["Q29028649","Q1401304","Q247506"]},
+    {"id":"law","topic":"Q7748","roots":["Q2135465","Q1192543"]},
+    {"id":"medicine","topic":"Q11190","roots":["Q12136","Q169872","Q796194","Q4936952","Q8386"]},
+    {"id":"mathematics","topic":"Q395","roots":["Q24034552"]}
+  ]
+}

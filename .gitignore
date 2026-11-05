@@ -45,3 +45,6 @@ local.properties
 .gradle/
 __pycache__/
 *.pyc
+
+# Small licensed speech detector distributed with the app
+!/Resources/ggml-silero-v5.1.2.bin
