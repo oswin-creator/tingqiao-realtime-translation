@@ -78,9 +78,25 @@ Apple 识别范围取决于系统和语言资源。在「翻译设置 → 语音
 
 线上模式通过 ScreenCaptureKit 读取播放声音，会议软件继续使用原来的麦克风和扬声器。软件无需虚拟声卡。线上只取播放音频，线下只取所选麦克风，避免两路音频同时进入造成重复字幕。当前未提供双路声学回声消除。
 
+## 下载安装
+
+[打开最新安装包页面](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/latest)，直接下载使用。
+
+| 平台 | 下载文件 | 系统要求 |
+| --- | --- | --- |
+| Mac | [听桥 0.2.16 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.16/TingQiao-macOS-arm64-0.2.16.dmg) | Apple 芯片，macOS 14+ |
+| 安卓随身字幕 | [听桥字幕 0.3.2 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.16/TingQiao-Captions-Android-0.3.2.apk) | Android 8+ |
+| 文件校验 | [SHA-256 校验值](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.16/SHA256SUMS.txt) | 可用于核对下载完整性 |
+
+Mac 打开 DMG，把听桥拖进「应用程序」。安卓下载 APK 安装。也可以让手机与电脑连接同一个 Wi-Fi，用手机相机扫描 Mac 二维码，在浏览器直接看字幕，无需下载 App。
+
+Mac 测试包采用 ad-hoc 签名，尚未经过 Apple 公证，首次打开可能被系统拦截。确认来源可信后，可按 [Apple 官方说明](https://support.apple.com/zh-cn/102445)处理。安卓可能需要允许安装该文件来源的 APK。详细步骤见[安装说明](docs/INSTALL.md)。
+
+Whisper 模型在 App 中按需单独下载。
+
 ## 从源码构建
 
-本仓库包含 **Mac 0.2.15** 和 **Android 0.3.2** 源码。
+本仓库包含 **Mac 0.2.16** 和 **Android 0.3.2** 源码。
 
 ### Mac
 

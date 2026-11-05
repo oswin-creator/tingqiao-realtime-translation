@@ -31,7 +31,7 @@ enum WalkthroughStep: Int, CaseIterable {
         case .translation:
             return "翻译 API 接收识别后的文字。推荐自定义接入模力方舟 Hy-MT2-30B-A3B，兼顾成本与效果，可参考前 4 段上文。选择「自定义大模型」查看推荐与费用。"
         case .phone:
-            return "「随身字幕」把原文和译文同步到安卓手机，支持同一 Wi-Fi 扫码或蓝牙连接。首次配对后可记住电脑，也能隐藏电脑字幕、只在手机阅读。"
+            return "同一 Wi-Fi 下，手机相机扫码即可用浏览器看字幕，无需下载 App。安卓 App 也支持 Wi-Fi 扫码和蓝牙连接，可记住已配对的电脑。需要时还能隐藏电脑字幕。"
         case .assistant:
             return "「帮我回答」拟一条回应最近讨论问题的话，「解释刚才」用中文讲清最近内容。这里单独配置通用对话模型，例如 DeepSeek，建议先用低思考、最多 3 句。每次点击才发送最近 15 段。"
         }

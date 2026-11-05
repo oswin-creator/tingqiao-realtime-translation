@@ -96,7 +96,7 @@ struct MainView: View {
             Text(model.status).font(.system(size: 11))
             Spacer()
             if model.pendingCount > 0 { Text("\(model.pendingCount) 段待处理").font(.system(size: 11)).foregroundStyle(Palette.accent) }
-            Text("听桥 0.2.15").font(.system(size: 11)).foregroundStyle(Palette.muted)
+            Text("听桥 0.2.16").font(.system(size: 11)).foregroundStyle(Palette.muted)
         }.foregroundStyle(Palette.muted).padding(.horizontal, 30).padding(.vertical, 13).background(.white.opacity(0.65))
     }
 }
@@ -435,7 +435,7 @@ struct TranslationSettingsView: View {
             TextField("API 基础地址，例如 https://你的服务商/v1", text: $model.settings.baseURL).textFieldStyle(.roundedBorder)
             TextField("模型名称（填写服务商提供的名称）", text: $model.settings.model).textFieldStyle(.roundedBorder)
             SecureField("API Key（本机服务可留空）", text: $model.customKey).textFieldStyle(.roundedBorder)
-            Text("支持 Chat Completions 格式的接口，自动补上 /chat/completions，也可以填完整地址。此处模型用于文字翻译；只支持 Claude 原生 Messages 等其他格式的接口需要适配。").font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(5)
+            Text("支持 Chat Completions 格式的接口，自动补上 /chat/completions，也可以填完整地址。此处模型用于文字翻译。").font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(5)
             Divider()
             Toggle("翻译时参考上文", isOn: $model.settings.useTranslationContext).toggleStyle(.switch)
             if model.settings.useTranslationContext {
@@ -454,22 +454,43 @@ struct PhoneSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 SoftCard(padding: 28) {
-                    HStack(alignment: .top, spacing: 35) {
+                    HStack(alignment: .top, spacing: 28) {
                         VStack(alignment: .leading, spacing: 18) {
+                            Label("Wi-Fi 随身字幕", systemImage: "wifi").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.accent)
                             Text("把字幕，放到手机上").font(.system(size: 24, weight: .semibold))
-                            Text("电脑和手机连接同一个 Wi-Fi，\n扫描二维码，即可打开随身字幕。") .font(.system(size: 14)).foregroundStyle(Palette.muted).lineSpacing(8)
-                            HStack { Circle().fill(model.phoneEnabled ? Palette.mint : Palette.muted).frame(width: 7, height: 7); Text(model.phoneEnabled ? "Wi-Fi 字幕已开启" : "Wi-Fi 字幕未开启").font(.system(size: 12)) }
-                            Button(model.phoneEnabled ? "关闭手机连接" : "开启 Wi-Fi 字幕") { model.togglePhone() }.buttonStyle(.borderedProminent).tint(Palette.accent)
+                            Text("手机和电脑连接同一个 Wi-Fi，任选一种方式开始阅读。")
+                                .font(.system(size: 13)).foregroundStyle(Palette.muted).lineSpacing(5)
+                            VStack(alignment: .leading, spacing: 15) {
+                                connectionOption(icon: "safari", title: "浏览器直接看", detail: "无需下载 App，用手机相机扫码，在浏览器打开即可。")
+                                Divider().overlay(Palette.line)
+                                connectionOption(icon: "apps.iphone", title: "安卓 App 里看", detail: "在「听桥字幕」中扫码，或粘贴电脑上的配对链接。")
+                            }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Palette.canvas, in: RoundedRectangle(cornerRadius: 13))
+                            HStack(spacing: 12) {
+                                HStack(spacing: 6) {
+                                    Circle().fill(model.phoneEnabled ? Palette.mint : Palette.muted).frame(width: 6, height: 6)
+                                    Text(model.phoneEnabled ? "Wi-Fi 字幕已开启" : "Wi-Fi 字幕未开启").font(.system(size: 11)).foregroundStyle(Palette.muted)
+                                }
+                                Spacer(minLength: 4)
+                                Button(model.phoneEnabled ? "关闭 Wi-Fi 字幕" : "开启 Wi-Fi 字幕") { model.togglePhone() }
+                                    .buttonStyle(.borderedProminent).tint(Palette.accent)
+                            }
                             if model.phoneEnabled {
-                                Text(model.phoneURL.isEmpty ? "正在启动…" : model.phoneURL).font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.muted).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                                Button("复制配对链接") { model.copyPhoneURL() }.disabled(model.phoneURL.isEmpty)
+                                Button { model.copyPhoneURL() } label: { Label("复制配对链接", systemImage: "link") }
+                                    .disabled(model.phoneURL.isEmpty).buttonStyle(.plain).foregroundStyle(Palette.accent)
+                                Text(model.phoneURL.isEmpty ? "正在启动…" : model.phoneURL)
+                                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.muted)
+                                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading)
                         VStack(spacing: 13) {
                             if let image = qrImage(model.phoneURL), !model.phoneURL.isEmpty { Image(nsImage: image).interpolation(.none).resizable().scaledToFit().frame(width: 175, height: 175) }
                             else { Image(systemName: "qrcode").font(.system(size: 110, weight: .ultraLight)).foregroundStyle(Palette.line).frame(width: 175, height: 175) }
-                            Text(model.phoneEnabled ? "手机相机扫一扫" : "开启后生成配对码").font(.system(size: 11)).foregroundStyle(Palette.muted)
-                        }.padding(22).background(Palette.canvas, in: RoundedRectangle(cornerRadius: 20))
+                            Text(model.phoneEnabled ? "扫码后用浏览器打开" : "开启后生成二维码")
+                                .font(.system(size: 11)).foregroundStyle(Palette.muted)
+                            Text("浏览器 · 安卓 App")
+                                .font(.system(size: 10)).foregroundStyle(Palette.accent)
+                        }.padding(20).background(Palette.canvas, in: RoundedRectangle(cornerRadius: 17))
                     }
                 }
                 SoftCard(padding: 28) {
@@ -513,6 +534,16 @@ struct PhoneSettingsView: View {
                 }
                 if !model.notice.isEmpty { NoticeBar(text: model.notice) { model.notice = "" } }
             }.padding(28).frame(maxWidth: 950)
+        }
+    }
+    private func connectionOption(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 11) {
+            Image(systemName: icon).font(.system(size: 17)).foregroundStyle(Palette.accent).frame(width: 23)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.system(size: 12, weight: .semibold))
+                Text(detail).font(.system(size: 11)).foregroundStyle(Palette.muted)
+                    .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
     private func qrImage(_ value: String) -> NSImage? {

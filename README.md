@@ -77,9 +77,25 @@ Use a general conversation model, such as DeepSeek, for the separate assistant A
 
 In online mode, TingQiao reads playback audio through ScreenCaptureKit and leaves microphone selection to the meeting app. It needs no virtual audio device. In-person mode uses the chosen microphone. Capture follows one selected path, with no dual-input acoustic echo cancellation.
 
+## Download and install
+
+[Get the latest packages](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/latest) — no source build required.
+
+| Platform | Download | Requirements |
+| --- | --- | --- |
+| Mac | [TingQiao 0.2.16 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.16/TingQiao-macOS-arm64-0.2.16.dmg) | Apple silicon, macOS 14+ |
+| Android companion | [TingQiao Captions 0.3.2 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.16/TingQiao-Captions-Android-0.3.2.apk) | Android 8+ |
+| Integrity | [SHA-256 checksums](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.16/SHA256SUMS.txt) | Verify downloaded files |
+
+Open the DMG and drag TingQiao to Applications. Install the APK on Android, or scan the Mac's Wi-Fi QR code with a phone camera and read captions directly in the browser. Mac and phone must share the same Wi-Fi for browser access.
+
+The Mac preview has an ad-hoc signature and is not Apple-notarized. macOS may block its first launch. If you trust the download, follow [Apple's opening instructions](https://support.apple.com/en-us/102445). Android may request permission to install this APK source. See [installation help](docs/INSTALL.md).
+
+Whisper weights are downloaded separately, on demand, from the app settings.
+
 ## Build from source
 
-The repository includes **Mac 0.2.15** and **Android 0.3.2** sources. Build output, model weights, credentials, and signing keys are excluded.
+The repository includes **Mac 0.2.16** and **Android 0.3.2** sources. Build output, model weights, credentials, and signing keys are excluded.
 
 ### Mac
 
