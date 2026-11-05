@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>TingQiao</string>
+<key>CFBundleIdentifier</key><string>cn.tingqiao.bridge</string>
+<key>CFBundleName</key><string>听桥</string>
+<key>CFBundleDisplayName</key><string>听桥</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>0.2.14</string>
+<key>CFBundleVersion</key><string>21</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
+<key>LSMinimumSystemVersion</key><string>14.0</string>
+<key>NSHighResolutionCapable</key><true/>
+<key>NSMicrophoneUsageDescription</key><string>听桥在线下会议时使用你选择的麦克风，把会议语音识别成字幕并按所选语言翻译。</string>
+<key>NSSpeechRecognitionUsageDescription</key><string>听桥需要把会议语音识别成文字。默认优先使用本机识别；关闭本机模式后可能由 Apple 在线识别。</string>
+<key>NSAudioCaptureUsageDescription</key><string>听桥在线上会议时读取会议软件播放的声音，不更改你的扬声器或会议麦克风。</string>
+<key>NSBluetoothAlwaysUsageDescription</key><string>听桥通过蓝牙将字幕直接同步到你配对的安卓手机，不传输录音或 API 密钥。</string>
+<key>NSLocalNetworkUsageDescription</key><string>听桥通过同一个 Wi-Fi 将字幕同步到你的手机。</string>
+<key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
+</dict></plist>

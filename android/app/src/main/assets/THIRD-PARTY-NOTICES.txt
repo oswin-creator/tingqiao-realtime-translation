@@ -1,0 +1,7 @@
+听桥本机语音识别使用 whisper.cpp v1.8.2 (commit 4979e04f5dcaccb36057e059bbaed8a2f5288315), MIT License.
+https://github.com/ggml-org/whisper.cpp
+Whisper 模型由 OpenAI 发布，MIT License.
+https://github.com/openai/whisper
+安卓二维码识别使用 ZXing Core 3.5.3, Apache License 2.0.
+https://github.com/zxing/zxing
+完整许可随源代码见 docs/licenses。

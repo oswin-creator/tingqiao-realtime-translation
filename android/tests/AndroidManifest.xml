@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="cn.tingqiao.tests">
+ <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
+ <application android:label="听桥蓝牙测试" />
+ <instrumentation android:name=".BluetoothIntegration" android:targetPackage="cn.tingqiao.companion" android:label="听桥蓝牙真机验证" />
+ <instrumentation android:name=".AssistantIntegration" android:targetPackage="cn.tingqiao.companion" android:label="听桥问答界面验证" />
+</manifest>

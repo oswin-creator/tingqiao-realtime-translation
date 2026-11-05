@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f5f6fb"><title>听桥 · 随身字幕</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Noto Sans SC",sans-serif;color:#20253b;background:#f5f6fb}*{box-sizing:border-box}body{margin:0}header{position:sticky;top:0;background:#f5f6fbf5;backdrop-filter:blur(18px);padding:22px 22px 15px;border-bottom:1px solid #e6e8f1;z-index:2}.brand{display:flex;align-items:center;gap:10px;font-size:21px;font-weight:750}.mark{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:11px;background:#6561e9;color:#fff}small{display:block;font-size:12px;color:#888da4;font-weight:400;margin-top:3px}#status{font-size:12px;color:#646a83;margin:16px 0 0;display:flex;align-items:center;gap:8px}#dot{width:7px;height:7px;border-radius:50%;background:#a2a7bc}#dot.live{background:#24a885}nav{display:flex;gap:8px;margin-top:16px}button{border:1px solid #dddfee;background:white;border-radius:10px;padding:8px 12px;color:#626780;font-size:12px;cursor:pointer}button.active{background:#ebeaff;color:#5d55d6;border-color:#d5d1ff}main{max-width:760px;margin:auto;padding:20px 18px 120px}.empty{text-align:center;padding:90px 20px;color:#8a8da6}.empty strong{color:#4c5168;font-size:19px;display:block;margin-bottom:10px}article{background:white;border:1px solid #e7e8f2;border-radius:18px;padding:20px;margin-bottom:14px;box-shadow:0 4px 20px #23264303}time{color:#959ab1;font-size:11px;letter-spacing:.4px}.source{color:#8b90a5;font-size:15px;line-height:1.65;margin:12px 0}.zh{font-size:24px;line-height:1.65;letter-spacing:.2px;margin:10px 0 0;overflow-wrap:anywhere}.waiting{color:#9a9eb2;font-size:16px}footer{position:fixed;bottom:0;left:0;right:0;padding:12px 18px max(12px,env(safe-area-inset-bottom));background:#f5f6fbef;border-top:1px solid #e7e8f2;text-align:center;color:#999db0;font-size:11px}#follow{position:fixed;bottom:58px;right:20px;background:#6561e9;color:white;border:0;box-shadow:0 4px 14px #6561e944;display:none}body.large .zh{font-size:32px}body.no-original .source{display:none}.error{color:#b64b61!important}
+#assistant-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.tools{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.section-label{font-size:11px;font-weight:700;color:#777d97;letter-spacing:.08em;margin:16px 0 0}#assistant-actions button{min-height:43px;color:#574dc6;background:#eeebff;border-color:#e0dcfc;font-weight:700;font-size:14px}#assistant-actions button+button{background:#fff}#assistant-actions button:disabled{opacity:.55}#assistant-panel{position:fixed;z-index:5;display:flex;flex-direction:column;background:white;border:1px solid #ddd7fa;border-radius:17px;box-shadow:0 12px 42px #29204a37;padding:8px 10px 5px;width:330px;height:210px;min-width:0;min-height:0}#assistant-panel[hidden]{display:none}.panel-top{display:flex;align-items:center;gap:4px;padding-bottom:5px;border-bottom:1px solid #efedf8}.panel-title{flex:1;padding:9px 3px;color:#5a51cc;font-size:14px;font-weight:750;touch-action:none;cursor:move;user-select:none}.panel-top button,.panel-grip{min-width:33px;min-height:33px;padding:4px;color:#5a51cc}.panel-text{flex:1;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 3px 3px;line-height:1.6;font-size:15px}.panel-grip{align-self:flex-end;border:0;background:transparent;touch-action:none;cursor:nwse-resize}
+.panel-text details{margin:0 0 7px;color:#646987;font-size:13px}.panel-text summary{color:#5a51cc;cursor:pointer;font-weight:650}.panel-reasoning{max-height:96px;overflow:auto;padding:5px 0;border-bottom:1px solid #efedf8}
+</style></head><body>
+<header><div class="brand"><span class="mark">听</span><div>听桥<small>随身字幕 · Wi-Fi</small></div></div><p id="status"><span id="dot"></span><span id="statusText">正在连接电脑…</span></p><p class="section-label">会议助手</p><nav id="assistant-actions" aria-label="会议助手"><button id="ask-answer">帮我回答</button><button id="ask-explain">解释刚才</button></nav><nav class="tools" aria-label="字幕工具"><button id="original" class="active">双语字幕</button><button id="size">大字模式</button><button id="wake">保持亮屏</button></nav></header>
+<main id="captions"><div class="empty"><strong>字幕会在这里出现</strong>请在电脑上开始会议翻译</div></main><button id="follow">回到最新字幕 ↓</button><footer>电脑与手机需保持在同一 Wi-Fi · 请勿分享配对链接</footer>
+<aside id="assistant-panel" hidden role="region" aria-label="问答浮窗"><div class="panel-top"><div id="assistant-title" class="panel-title">会议助手</div><button id="assistant-smaller" aria-label="缩小问答浮窗">−</button><button id="assistant-larger" aria-label="放大问答浮窗">+</button><button id="assistant-close" aria-label="关闭问答浮窗">×</button></div><div class="panel-text"><details id="assistant-details" hidden><summary>思考过程</summary><div id="assistant-reasoning" class="panel-reasoning"></div></details><div id="assistant-text" aria-live="polite"></div></div><button id="assistant-grip" class="panel-grip" aria-label="拖动调整问答浮窗大小">◢</button></aside>
+<script>
+let token=location.hash.slice(1)||sessionStorage.getItem('tingqiao-token')||'';
+if(token){sessionStorage.setItem('tingqiao-token',token);history.replaceState(null,'',location.pathname)}
+let original=true,large=false,last='',following=true,wakeLock=null;
+const $=id=>document.getElementById(id),status=(text,live,error=false)=>{$('statusText').textContent=text;$('dot').className=live?'live':'';$('statusText').className=error?'error':''};
+const panel=$('assistant-panel');let assistantID='', panelRect;
+function place(x,y,w,h){w=Math.min(innerWidth,Math.max(225,w));h=Math.min(innerHeight,Math.max(144,h));x=Math.max(0,Math.min(innerWidth-w,x));y=Math.max(0,Math.min(innerHeight-h,y));panelRect={x,y,w,h};Object.assign(panel.style,{left:x+'px',top:y+'px',width:w+'px',height:h+'px'})}
+function resizeBy(delta){if(panelRect){const {x,y,w,h}=panelRect;place(x,y,w+delta,h+delta)}}
+function dragHandle(node,resize){let start=null;node.onpointerdown=e=>{if(!panelRect||e.button!==0)return;start={...panelRect,px:e.clientX,py:e.clientY,id:e.pointerId};node.setPointerCapture(e.pointerId);e.preventDefault()};node.onpointermove=e=>{if(!start||e.pointerId!==start.id)return;const {x,y,w,h,px,py}=start,dx=e.clientX-px,dy=e.clientY-py;resize?place(x,y,w+dx,h+dy):place(x+dx,y+dy,w,h)};node.onpointerup=node.onpointercancel=()=>{start=null}}
+dragHandle($('assistant-title'),false);dragHandle($('assistant-grip'),true);
+addEventListener('resize',()=>{if(panelRect){const {x,y,w,h}=panelRect;place(x,y,w,h)}});
+$('assistant-smaller').onclick=()=>resizeBy(-32);$('assistant-larger').onclick=()=>resizeBy(32);$('assistant-close').onclick=()=>{panel.hidden=true};
+function waiting(value){$('ask-answer').disabled=value;$('ask-explain').disabled=value}
+async function ask(action){
+    if(assistantID)return;
+    if(!panelRect)place(14,Math.max(8,innerHeight-247),328,206);
+    panel.hidden=false;$('assistant-title').textContent=action==='answer'?'帮我回答':'解释刚才';$('assistant-text').textContent='正在整理最近的对话…';
+    $('assistant-details').open=false;$('assistant-details').hidden=true;$('assistant-reasoning').textContent='';
+    if(!token){$('assistant-text').textContent='请先连接 Mac 字幕。';return}
+    const id=Array.from(crypto.getRandomValues(new Uint8Array(6)),value=>value.toString(16).padStart(2,'0')).join('');
+    assistantID=id;waiting(true);
+    const options={headers:{'X-Pairing-Token':token},cache:'no-store'};
+    try{
+        const response=await fetch('/api/assistant/'+action+'/'+id,{...options,method:'POST',signal:AbortSignal.timeout(5000)});
+        if(response.status===401)throw Error('配对已失效，请重新扫码。');
+        if(!response.ok)throw Error('Mac 暂时无法接收问答请求，请稍后再试。');
+        const deadline=Date.now()+55000;
+        while(Date.now()<deadline){
+            const result=await fetch('/api/assistant/'+id,{...options,signal:AbortSignal.timeout(5000)});
+            if(!result.ok)throw Error('未能读取回复，请检查 Mac 连接。');
+            const reply=await result.json();
+            if(reply.id===id){
+                const reasoning=reply.reasoning||'';
+                $('assistant-details').hidden=!reasoning;
+                if($('assistant-reasoning').textContent!==reasoning)$('assistant-reasoning').textContent=reasoning;
+                if($('assistant-text').textContent!==reply.text)$('assistant-text').textContent=reply.text;
+                if(reply.state!=='waiting')return;
+            }
+            await new Promise(resolve=>setTimeout(resolve,650));
+        }
+        throw Error('暂未收到回复，请检查 Mac 连接。');
+    }catch(error){$('assistant-text').textContent=error.message||'问答暂时未完成。'}
+    finally{assistantID='';waiting(false)}
+}
+$('ask-answer').onclick=()=>ask('answer');$('ask-explain').onclick=()=>ask('explain');
+$('original').onclick=()=>{original=!original;document.body.classList.toggle('no-original',!original);$('original').classList.toggle('active',original);$('original').textContent=original?'双语字幕':'只看译文'};
+$('size').onclick=()=>{large=!large;document.body.classList.toggle('large',large);$('size').classList.toggle('active',large)};
+$('wake').onclick=async()=>{try{if(!('wakeLock'in navigator))throw Error();if(wakeLock){await wakeLock.release();wakeLock=null;$('wake').classList.remove('active')}else{wakeLock=await navigator.wakeLock.request('screen');$('wake').classList.add('active');wakeLock.addEventListener('release',()=>{$('wake').classList.remove('active');wakeLock=null})}}catch{alert('当前浏览器或局域网 HTTP 页面不支持保持亮屏。可在手机系统设置里延长自动锁屏时间。')}};
+addEventListener('scroll',()=>{following=innerHeight+scrollY>=document.documentElement.scrollHeight-150;$('follow').style.display=following?'none':'block'},{passive:true});
+$('follow').onclick=()=>{following=true;window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'})};
+function render(data){const key=JSON.stringify(data.captions);if(key===last)return;last=key;const fragment=document.createDocumentFragment();for(const c of data.captions){const item=document.createElement('article'),time=document.createElement('time'),source=document.createElement('p'),zh=document.createElement('p');time.textContent=new Date((c.date+978307200)*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});source.className='source';source.textContent=c.original;zh.className=c.translated?'zh':'zh waiting';zh.textContent=c.isDraft?'正在听 · 确认整句后翻译':c.translated||'正在翻译…';item.append(time,source,zh);fragment.append(item)}if(!data.captions.length){const empty=document.createElement('p');empty.className='empty';empty.textContent='暂无字幕，新字幕会在这里出现。';fragment.append(empty)}$('captions').replaceChildren(fragment);if(following)window.scrollTo(0,document.body.scrollHeight)}
+async function poll(){if(!token){status('请扫描电脑上的配对二维码，或在安卓 App 中粘贴完整配对链接。',false,true);return}try{const response=await fetch('/api/state',{headers:{'X-Pairing-Token':token},cache:'no-store',signal:AbortSignal.timeout(5000)});if(response.status===401){status('配对已失效，请在电脑上重新扫码。',false,true);return}if(!response.ok)throw Error();const data=await response.json();status(data.status+(data.pending?' · '+data.pending+' 段待处理':''),data.running);render(data)}catch{status('与电脑的连接中断，正在自动重连…',false,true)}setTimeout(poll,900)}poll();
+</script></body></html>
