@@ -6,7 +6,7 @@
 2. 打开 DMG，把「听桥.app」拖到「Applications / 应用程序」。
 3. 从「应用程序」打开听桥，根据所选收音方式允许系统声音录制、麦克风或语音识别权限。
 4. 首次打开可使用简短引导，也可以跳过。需要时在顶部重新打开。
-5. 若选择 Whisper，在设置中按需下载约 1.6 GB 的模型。Apple 系统识别按可用的语言资源运行。
+5. 若选择本地模型，在设置中查看安装提示并下载所选模型（约 1.6～3.1 GB）；不用的模型可逐个移除。Apple 系统识别按可用的语言资源运行。
 
 当前 Mac 预览包采用 ad-hoc 签名，尚未经过 Apple Developer ID 公证。若系统提示无法验证开发者，请先确认文件来自本仓库。确认信任该文件后，可在尝试打开一次后，到「系统设置 → 隐私与安全性」按 Apple 提供的「仍要打开」流程确认。详见 [Apple 官方说明](https://support.apple.com/zh-cn/102445)。
 
@@ -30,7 +30,7 @@ Download and install the APK for Android 8 or later. Connect it to the Mac over 
 Release 附带 SHA256SUMS.txt。可在下载目录运行以下命令计算哈希，与对应文件名的值比较。
 
 ~~~sh
-shasum -a 256 TingQiao-macOS-arm64-0.2.22.dmg
+shasum -a 256 TingQiao-macOS-arm64-0.2.29.dmg
 shasum -a 256 TingQiao-Captions-Android-0.3.2.apk
 ~~~
 

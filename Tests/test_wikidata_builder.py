@@ -57,6 +57,15 @@ class BuilderTests(unittest.TestCase):
         item = entity(); item["labels"] = {key: item["labels"][key] for key in ["en", "zh"]}
         self.assertIsNone(wd.convert(item, "statistics"), "generic Chinese cannot count as two independent languages")
 
+    def test_verified_wikipedia_count_does_not_fabricate_site_records(self):
+        item = entity(); item["sitelinks"] = {}
+        self.assertIsNone(wd.convert(item, "statistics"))
+        self.assertIsNone(wd.convert(item, "statistics", wikipedia_count=1))
+        self.assertIsNotNone(wd.convert(item, "statistics", wikipedia_count=2))
+        self.assertEqual(item["sitelinks"], {}, "an audited count must not invent source records")
+        item["labels"].pop("ko"); item["labels"].pop("ja")
+        self.assertIsNone(wd.convert(item, "statistics", wikipedia_count=50), "site count cannot replace multilingual quality")
+
     def test_missing_korean_not_invented(self):
         item = entity(); item["labels"].pop("ko")
         converted = wd.convert(item, "statistics")

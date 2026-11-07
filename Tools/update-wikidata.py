@@ -300,7 +300,7 @@ def forms_from_entity(entity):
     return forms, language_sources
 
 
-def convert(entity, domain):
+def convert(entity, domain, wikipedia_count=None):
     if entity.get("id") in LABEL_CONFLICTS:
         return None
     description = entity.get("descriptions", {}).get("en", {}).get("value", "")
@@ -309,7 +309,7 @@ def convert(entity, domain):
     # Three independent language labels, not counting zh twice; at least two
     # encyclopedic sitelinks. Missing languages are never filled by translation.
     if ("en" not in forms or len(set(sources.values())) < 3
-            or sum(key.endswith("wiki") for key in links) < 2
+            or (sum(key.endswith("wiki") for key in links) if wikipedia_count is None else wikipedia_count) < 2
             or not description or BAD_DESCRIPTION.search(description)):
         return None
     en = normalized(forms["en"]["preferred"])
@@ -448,7 +448,7 @@ def install(output, destination):
     # Only this external layer is replaced. custom.json is never touched.
     # Detailed per-entity revisions/language provenance stay with the build
     # report and raw cache; the runtime needs only this small summary.
-    atomic_write(destination / "wikidata.manifest.json", encode({key: value for key, value in manifest.items() if key != "entities"}))
+    atomic_write(destination / "wikidata.manifest.json", encode({key: value for key, value in manifest.items() if key not in ("entities", "newEntities")}))
     atomic_write(target, payload)
     print(f"已安装外部数据层：{target}；重新加载词库或重开应用后使用", flush=True)
 

@@ -32,19 +32,19 @@
 | --- | --- |
 | **线上与线下收音** | 线上读取系统或指定应用的声音，线下选择电脑、USB 或蓝牙麦克风。 |
 | **16 种语言可选** | 原文和译文分别选择。Whisper 的多种语言共用一份模型。 |
-| **两种识别引擎** | Apple 系统识别，或通过 whisper.cpp + Metal 在本机运行 Whisper large-v3-turbo。 |
+| **五种识别引擎** | Apple 系统识别、Whisper Turbo、Whisper Medium KomixV2（韩语）、Whisper Large V3、Qwen3-ASR-1.7B，模型按需下载。 |
 | **自由选择翻译服务** | 谷歌免 Key 试用接口、Google Cloud、Index-Translate，以及兼容 Chat Completions 的自定义接口。 |
 | **结合上文翻译** | 可参考前面 1–6 段原文和已有译文，当前字幕只显示本段的翻译。 |
 | **桌面悬浮字幕** | 多句历史滚动、回到最新、透明度、始终置顶、独立字号和窗口缩放。 |
 | **手机随身字幕** | Wi-Fi 扫码或蓝牙直连，支持记住多台电脑的配对。 |
-| **点一下再问答** | 「帮我回答」「解释刚才」参考最近 15 段正式字幕，回复上限可设为 1–3 句，模型返回的思考过程可折叠。 |
+| **点一下再问答** | 参考最近五分钟背景，逐个回答最近 15 段的问题，或解释这 15 段。回答使用提问语言并附目标语言译文；每题可设 1–3 句，思考过程可折叠。 |
 | **整理会议记录** | 本机历史、单条删除、清空与撤销、TXT 导出。待处理音频先保存，再排队识别。 |
 
 ### 支持的语言选项
 
 英语、韩语、日语、简体中文、繁体中文、西班牙语、法语、德语、葡萄牙语、意大利语、俄语、阿拉伯语、印地语、印尼语、越南语、泰语。
 
-Apple 识别范围取决于系统和语言资源。在「翻译设置 → 语音识别」中，可以检查当前语言支持、打开系统语言设置。macOS 26 的新识别引擎若缺少当前资源，可点按钮手动下载。Whisper 切换语言共用已经下载的模型。
+Apple 识别范围取决于系统和语言资源。在「翻译设置 → 语音识别」中，可以检查当前语言支持、打开系统语言设置。macOS 26 的新识别引擎若缺少当前资源，可点按钮手动下载。多语言模型切换语言共用已经下载的权重；KomixV2 仅用于韩语。
 
 ## 把字幕放在手机上
 
@@ -71,7 +71,7 @@ Apple 识别范围取决于系统和语言资源。在「翻译设置 → 语音
 
 1. 打开听桥，选择「线上会议」或「线下会议」。
 2. 选择声音来源、原文语言和译文语言。
-3. 在「翻译设置」选择识别引擎和翻译服务。使用 Whisper 时，首次下载或导入约 **1.6 GB** 的模型。
+3. 在「翻译设置」选择识别引擎和翻译服务。使用本地模型时，先查看安装提示，再下载或导入所选模型。
 4. 自定义接口需填写地址、模型名称和 API Key。「问答大模型设置」有独立配置。
 5. 点击「开始翻译」，按系统提示允许相关权限。
 6. 按需开启悬浮字幕，或连接安卓手机。
@@ -84,29 +84,43 @@ Apple 识别范围取决于系统和语言资源。在「翻译设置 → 语音
 
 | 平台 | 下载文件 | 系统要求 |
 | --- | --- | --- |
-| Mac | [听桥 0.2.22 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.22/TingQiao-macOS-arm64-0.2.22.dmg) | Apple 芯片，macOS 14+ |
-| 安卓随身字幕 | [听桥字幕 0.3.2 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.22/TingQiao-Captions-Android-0.3.2.apk) | Android 8+ |
-| 文件校验 | [SHA-256 校验值](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.22/SHA256SUMS.txt) | 可用于核对下载完整性 |
+| Mac | [听桥 0.2.29 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.29/TingQiao-macOS-arm64-0.2.29.dmg) | Apple 芯片，macOS 14+ |
+| 安卓随身字幕 | [听桥字幕 0.3.2 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.29/TingQiao-Captions-Android-0.3.2.apk) | Android 8+ |
+| 文件校验 | [SHA-256 校验值](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.29/SHA256SUMS.txt) | 可用于核对下载完整性 |
 
 Mac 打开 DMG，把听桥拖进「应用程序」。安卓下载 APK 安装。也可以让手机与电脑连接同一个 Wi-Fi，用手机相机扫描 Mac 二维码，在浏览器直接看字幕，无需下载 App。
 
 Mac 测试包采用 ad-hoc 签名，尚未经过 Apple 公证，首次打开可能被系统拦截。确认来源可信后，可按 [Apple 官方说明](https://support.apple.com/zh-cn/102445)处理。安卓可能需要允许安装该文件来源的 APK。详细步骤见[安装说明](docs/INSTALL.md)。
 
-Whisper 模型在 App 中按需单独下载。
+本地识别模型在 App 中按需单独下载，每个模型都可单独移除。
 
-## 新版设置与内置词库 · 0.2.22
+## 识别模型 · 0.2.29
+
+| 引擎 | 下载大小 | 安装后 | 语言 |
+| --- | --- | --- | --- |
+| Apple 系统识别 | macOS 管理 | macOS 管理 | 取决于系统资源 |
+| Whisper large-v3-turbo | 1.62 GB | 1.62 GB | 多语言 |
+| Whisper Medium KomixV2 | 3.06 GB | 约 1.53 GB | 韩语 |
+| Whisper Large V3 | 3.10 GB | 3.10 GB | 多语言 |
+| Qwen3-ASR-1.7B Q8 | 2.19 GB | 2.19 GB | 多语言 |
+
+模型权重不放进安装包。下载前显示安装提示和来源，下载时显示进度，完成后校验；不用的模型可逐个移除。KomixV2 已修复韩语编码，旧文件首次使用时自动修复，无需重新下载权重。
+
+句尾明确时停顿约 0.7 秒提交，其他约 1.5 秒；连续发言约 7 秒起寻找自然停顿，最长 10 秒。强切后下一段附带前面 1.5 秒声音。异常重复先保留正常临时字幕，最多用本段音频复核一次。[查看更新说明](docs/RELEASE-0.2.29.md)。
+
+## 设置与内置词库
 
 翻译设置重新整理为「语音识别、翻译接口、术语与语境、字幕显示」四个平级分页，保存按钮固定在底部，详细收音规则集中到一个说明入口。
 
-软件内置 **10,018 个 Wikidata 专业概念**，与人工校订词去重后默认 **10,041 条**，安装后即可离线检索。保留 JSON 词库导入、导出，自定义词优先；通过校验的本机更新包可替代内置快照。
+软件内置 **14,160 个 Wikidata 专业概念**，并补充统计学、双重差分等人工校订词。每次开始收音前可多选专业领域，上次选择会预先勾选，会议中保持固定。安装后即可离线检索。保留 JSON 词库导入、导出，自定义词优先；通过校验的本机更新包可替代内置快照。
 
-术语提示用于 Index 与自定义接口的文字翻译，不直接修改 Whisper 听写，也不改变当前 Google 请求。每次仅发送少量相关项，预算约 300 Token（估算）、最多 900 UTF-8 字节。各语言覆盖不同，不能保证译名全部准确。数据来自 Wikidata，CC0-1.0，快照日期 2026-11-05，详见[词库说明](docs/TERMINOLOGY.md)。
+术语提示用于 Index 与自定义接口的文字翻译，不直接修改 Whisper 听写，也不改变当前 Google 请求。每次仅发送少量相关项，预算约 300 Token（估算）、最多 900 UTF-8 字节。各语言覆盖不同，不能保证译名全部准确。数据来自 Wikidata，CC0-1.0，快照日期 2026-11-06，详见[词库说明](docs/TERMINOLOGY.md)。
 
 ![翻译设置，配置与内容均为示例](docs/images/settings.png)
 
 ## 从源码构建
 
-本仓库包含 **Mac 0.2.22** 和 **Android 0.3.2** 源码。
+本仓库包含 **Mac 0.2.29** 和 **Android 0.3.2** 源码。
 
 ### Mac
 
@@ -119,6 +133,7 @@ xcode-select --install
 # 使用 Homebrew 时：
 brew install cmake python
 zsh build-whisper.sh
+zsh build-qwen.sh
 zsh build.sh
 open build/听桥.app
 ~~~
@@ -153,7 +168,7 @@ zsh test.sh
 - API Key 保存在 **macOS 钥匙串**，手机协议不会返回密钥。
 - Apple 本机识别和 Whisper 在 Mac 处理音频。主动选择 Apple 在线识别后，音频可能发送给 Apple。
 - 翻译会把正式原文发送给选定服务。开启上下文时，会额外发送前文及已有译文。
-- 点问答按钮时，才向独立配置的问答接口发送最多 15 段正式字幕。
+- 点问答按钮时，才向独立配置的问答接口发送最近 15 段正式字幕及最近五分钟的背景。
 - 记录和待处理音频保存在 **~/Library/Application Support/TingQiao/**。成功识别并保存文字后，对应音频会删除。
 - Wi-Fi 字幕采用**局域网 HTTP**，配对链接包含凭据，请在可信网络中使用。蓝牙采用加密 GATT 特征和应用配对凭据。
 - 这份公开源码已排除个人设置、会议记录、配对数据、真实对话截图、个人设备测试报告与签名产物。

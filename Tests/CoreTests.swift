@@ -230,6 +230,8 @@ struct CoreTests {
     static func audioTests(store: SessionStore) throws {
         let segmenter = AudioSegmenter(directory: store.audio, meetingRules: false)
         var emitted: [(URL, Bool)] = []
+        var windows: [SpeechWindow] = []
+        segmenter.onWindow = { if $0.isFinal { windows.append($0) } }
         segmenter.onSegment = { url, _, overlap in emitted.append((url, overlap)) }
         segmenter.onFailure = { fatalError($0) }
         let silent = try makeSample(rate: 48000, channels: 2, silent: true)
@@ -241,7 +243,9 @@ struct CoreTests {
         check(emitted.isEmpty, "clear discards partial audio without emitting it")
         // Exercise the actual CMSampleBuffer -> converter -> WAV path with 20 minutes of synthetic PCM.
         for _ in 0..<12000 { segmenter.append(voiced) }; segmenter.flush()
-        check(emitted.count >= 240 && emitted.count <= 270, "continuous audio is segmented with bounded buffers")
+        check(emitted.count >= 235 && emitted.count <= 241, "continuous audio is segmented with bounded new-audio windows")
+        let totalNewFrames = try zip(emitted, windows).map { event, window in Int(try AVAudioFile(forReading: event.0).length) - window.contextSampleCount }.reduce(0, +)
+        check(totalNewFrames >= 1199 * 16000 && totalNewFrames <= 1201 * 16000, "twenty-minute resampled audio conserved excluding context")
         check(!emitted[0].1 && emitted[1].1, "forced chunk cuts carry overlap metadata")
         let first = try AVAudioFile(forReading: emitted[0].0)
         check(first.processingFormat.sampleRate == 16000 && first.processingFormat.channelCount == 1, "normalize stereo 48k audio to mono 16k")

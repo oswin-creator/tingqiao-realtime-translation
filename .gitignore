@@ -48,3 +48,8 @@ __pycache__/
 
 # Small licensed speech detector distributed with the app
 !/Resources/ggml-silero-v5.1.2.bin
+
+# Local diagnostics and editor state
+/.serena/
+/core-*/
+CODEX交接汇报*.md

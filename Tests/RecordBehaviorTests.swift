@@ -22,6 +22,21 @@ import Foundation
         try store.save(initial)
         var preferences = AppSettings(); preferences.provider = .custom
         let model = AppModel(store: store, settings: preferences, startBackgroundWork: false)
+        model.rememberMeetingDomains(["statistics", "business", "statistics"])
+        model.start()
+        check(model.choosingMeetingDomains && !model.isRunning && !model.isStarting, "start opens domain selection before audio capture")
+        check(model.meetingDomainSelection == ["business", "statistics"], "start preselects remembered domains")
+        model.meetingDomainSelection = ["law"]
+        model.choosingMeetingDomains = false
+        check(model.settings.terminologyDomains == ["business", "statistics"], "cancel leaves preferred domains unchanged")
+        model.start()
+        check(model.choosingMeetingDomains && model.meetingDomainSelection == ["business", "statistics"], "every start asks again with saved choices")
+        model.meetingDomainSelection = ["law"]
+        model.confirmMeetingDomains()
+        check(!model.choosingMeetingDomains && model.settings.terminologyDomains == ["law"] && !model.isRunning, "confirm remembers choices before the provider preflight")
+        model.start()
+        check(model.meetingDomainSelection == ["law"], "confirmed choices are preselected next time")
+        model.choosingMeetingDomains = false
         check(model.captions.count == 200 && model.allCaptions.count == 349, "floating has all text beyond main display cap")
         let export = TranscriptExport.render(model.jobs)
         check(export.contains("原文：Source 0\n译文：译文 0") && export.contains("原文：Source 348\n译文：（待翻译）"), "TXT includes earliest original/translation and pending placeholder")
@@ -56,6 +71,9 @@ import Foundation
         let legacySettings = Data(#"{"fontSize":30,"provider":"自定义大模型","model":"saved-model"}"#.utf8)
         let migrated = try JSONDecoder().decode(AppSettings.self, from: legacySettings)
         check(migrated.floatingFontSize == 30 && migrated.floatingAlwaysOnTop && migrated.floatingOpacity == 1 && migrated.model == "saved-model", "new settings preserve legacy configuration")
+        var transparent = migrated; transparent.floatingOpacity = 0
+        let restoredTransparent = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(transparent))
+        check(restoredTransparent.floatingOpacity == 0 && restoredTransparent.model == "saved-model", "fully transparent background persists without changing model settings")
         let legacyJob = initial[0]
         let oldJSON = try JSONEncoder().encode(legacyJob)
         check(try! JSONDecoder().decode(AudioJob.self, from: oldJSON).deletedAt == nil, "old jobs migrate without deletedAt")

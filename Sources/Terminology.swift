@@ -1,6 +1,25 @@
 import Foundation
 import CryptoKit
 
+enum MeetingDomain: String, CaseIterable {
+    case statistics, mathematics, computerScience = "computer-science", medicine, business, law, industry
+    var title: String {
+        switch self {
+        case .statistics: return "统计与研究方法"
+        case .mathematics: return "数学"
+        case .computerScience: return "计算机与 AI"
+        case .medicine: return "医学"
+        case .business: return "经济与商务"
+        case .law: return "法律"
+        case .industry: return "工程与工业"
+        }
+    }
+    static func summary(_ ids: [String]) -> String {
+        let names = ids.map { Self(rawValue: $0)?.title ?? $0 }
+        return names.isEmpty ? "未选专业领域 · 普通翻译" : names.joined(separator: "、")
+    }
+}
+
 struct TermForm: Codable {
     var preferred: String
     var aliases: [String]? = nil
@@ -88,6 +107,10 @@ enum TermText {
             let chars = Array(token)
             if chars.contains(where: isEastAsian) {
                 if chars.count >= 2 { for n in 0..<(chars.count - 1) { keys.insert(String(chars[n...n+1])) } }
+                for part in token.split(whereSeparator: { !$0.isASCII || !($0.isLetter || $0.isNumber) }) {
+                    keys.insert(String(part))
+                    if let singular = singular(String(part)) { keys.insert(singular) }
+                }
             } else {
                 keys.insert(String(token))
                 if let singular = singular(String(token)) { keys.insert(singular) }
@@ -101,7 +124,8 @@ enum TermText {
     }
     static func acronym(_ text: String) -> Bool {
         let letters = text.filter(\.isLetter)
-        return !letters.isEmpty && letters.count <= 5 && letters.allSatisfy { $0.isASCII && $0.isUppercase }
+        return !letters.isEmpty && letters.count <= 5 && letters.allSatisfy(\.isASCII) &&
+            (letters.allSatisfy(\.isUppercase) || letters.filter(\.isUppercase).count >= 2)
     }
     static let koreanSuffixes: Set<String> = ["은", "는", "이", "가", "을", "를", "의", "에", "에서", "에서는", "에는", "으로", "으로는", "로", "와", "과", "도", "만", "까지", "부터", "보다", "라고", "이라고", "이라는", "란", "입니다", "이다", "이었다", "였다", "에선"]
 
@@ -116,7 +140,7 @@ enum TermText {
             if language == "ja" || language.hasPrefix("zh") {
                 if phrase.first.map(isEastAsian) == true { left = true }
                 if phrase.last.map(isEastAsian) == true { right = true }
-            } else if language == "ko", !right, phrase.last.map(isEastAsian) == true {
+            } else if language == "ko", !right {
                 let suffix = text[range.upperBound...].prefix { $0.isLetter }
                 right = koreanSuffixes.contains(String(suffix))
             } else if language == "en", !right {
@@ -285,8 +309,8 @@ final class TerminologyIndex {
         Set(matches.filter { !$0.possible && !$0.short && library.entries[$0.entry].kind == .fixed }.map { library.entries[$0.entry].domain })
     }
 
-    func retrieve(text: String, source: String, target: String, recent: [TermMemoryTurn] = [], topic: String = "", now: Date, useMemory: Bool = true) -> TerminologyHint? {
-        guard source != target, !text.isEmpty else { return nil }
+    func retrieve(text: String, source: String, target: String, recent: [TermMemoryTurn] = [], topic: String = "", now: Date, useMemory: Bool = true, selectedDomains: Set<String>? = nil) -> TerminologyHint? {
+        guard source != target, !text.isEmpty, selectedDomains?.isEmpty != true else { return nil }
         let current = TermText.normalized(String(text.prefix(2000)))
         var direct = matches(current, raw: text, language: source, allowFuzzy: true)
         let resets: [String: [String]] = ["en": ["change the topic", "switch topics", "new topic"], "ko": ["다른 주제", "주제를 바꾸"], "ja": ["話題を変え", "別の話題"], "zh-CN": ["换个话题", "新话题"], "zh-TW": ["換個話題", "新話題"]]
@@ -343,12 +367,12 @@ final class TerminologyIndex {
             }
         }
         // Explicit evidence for a new domain wins over historical context.
-        let allowed = currentDomains.isEmpty ? activeDomains : currentDomains
+        let allowed = selectedDomains ?? (currentDomains.isEmpty ? activeDomains : currentDomains)
         active = active.filter { allowed.contains(library.entries[$0.key].domain) }
         var ranked: [Int: (Int, Bool)] = [:]
         for hit in direct {
             let entry = library.entries[hit.entry]
-            guard entry.forms[target] != nil else { continue }
+            guard entry.forms[target] != nil, selectedDomains?.contains(entry.domain) ?? true else { continue }
             if (entry.kind == .contextual || hit.possible || hit.short) && !allowed.contains(entry.domain) { continue }
             let score = (hit.possible ? 50 : entry.kind == .fixed ? 100 : 80) + min(30, hit.length)
             if score > (ranked[hit.entry]?.0 ?? 0) { ranked[hit.entry] = (score, hit.possible) }
@@ -529,6 +553,10 @@ actor TerminologyService {
         indexes[source] = replacement
         return replacement
     }
+    func availableDomains() -> [String] {
+        _ = load()
+        return (library?.domains.map(\.id) ?? MeetingDomain.allCases.map(\.rawValue)).sorted()
+    }
     func prepare(source: String) { _ = load(); _ = index(for: source) }
     func reload() -> (Int, String) {
         clearIndexes(); library = nil; attemptedLoad = false; warning = ""; sourceSummary = "未安装 Wikidata 本地数据包"
@@ -554,10 +582,10 @@ actor TerminologyService {
         let encoder = JSONEncoder(); encoder.outputFormatting = library.entries.count <= 1000 ? [.prettyPrinted, .sortedKeys] : [.sortedKeys]
         return try encoder.encode(library)
     }
-    func hint(text: String, source: String, target: String, recent: [TermMemoryTurn], topic: String, now: Date, memory: Bool) -> TerminologyHint? {
+    func hint(text: String, source: String, target: String, recent: [TermMemoryTurn], topic: String, now: Date, memory: Bool, selectedDomains: Set<String>? = nil) -> TerminologyHint? {
         guard source != target, !text.isEmpty else { return nil }
         _ = load()
-        return index(for: source)?.retrieve(text: text, source: source, target: target, recent: recent, topic: topic, now: now, useMemory: memory)
+        return index(for: source)?.retrieve(text: text, source: source, target: target, recent: recent, topic: topic, now: now, useMemory: memory, selectedDomains: selectedDomains)
     }
     static func recent(before job: AudioJob, in jobs: [AudioJob]) -> [TermMemoryTurn] {
         guard let position = jobs.firstIndex(where: { $0.id == job.id }) else { return [] }

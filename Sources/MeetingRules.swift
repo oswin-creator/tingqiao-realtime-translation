@@ -7,6 +7,9 @@ struct SpeechWindow {
     var overlap: Bool
     var isFinal: Bool
     var duration: Double
+    var contextSampleCount: Int = 0
+    var audioStartSample: Int64? = nil
+    var audioTimelineID: UUID? = nil
 }
 
 enum MeetingRules {
@@ -16,6 +19,7 @@ enum MeetingRules {
     static let earliestNaturalCut = 7.0
     static let naturalCutSearchStart = 7.0
     static let maximumWindow = 10.0
+    static let contextDuration = 1.5
     private static let sentencePunctuation = ".?!。？！؟۔।"
 
     private static let koreanFinalEndings = [

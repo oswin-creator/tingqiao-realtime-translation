@@ -8,6 +8,16 @@ https://github.com/snakers4/silero-vad
 安卓二维码识别使用 ZXing Core 3.5.3, Apache License 2.0.
 https://github.com/zxing/zxing
 完整许可随源代码见 docs/licenses。
-内置专业术语包包含 10,018 个 Wikidata 概念，CC0-1.0；快照日期 2026-11-05。应用支持独立的本地更新包及用户自定义词库。
+内置专业术语包包含 14,160 个 Wikidata 概念，CC0-1.0；快照日期 2026-11-06。应用支持独立的本地更新包及用户自定义词库。
 https://www.wikidata.org/wiki/Wikidata:Licensing
 Wikidata 标签不保证是经专业审核的译名；来源、修订和语言覆盖见本地词库生成报告。
+经济商务候选使用 STW 官方 Wikidata 对应表（CC0）的 exactMatch 发现，未导入 STW 词条文本。
+https://zbw.eu/stw/version/latest/mapping/wikidata/about.en.html
+Qwen 本机识别引擎使用 transcribe.cpp (commit 5700f127e38dd53c4735ea23ef743b4b538eacd4)，MIT License；其 ggml 组件同为 MIT License。
+https://github.com/handy-computer/transcribe.cpp
+Qwen3-ASR-1.7B 由 Qwen 团队发布，Apache-2.0；用户按需下载 handy-computer 提供的 Q8 GGUF 转换文件，模型权重不随应用分发。
+https://huggingface.co/Qwen/Qwen3-ASR-1.7B
+https://huggingface.co/handy-computer/Qwen3-ASR-1.7B-gguf
+Whisper Medium KomixV2 由 seastar105 提供；用户从原作者仓库下载，应用在本机转换格式，模型权重不随应用分发。
+https://huggingface.co/seastar105/whisper-medium-komixv2
+whisper-medium-vocab.bin 仅含 Whisper medium 的参数布局、mel 滤波器与词元表，不含语音识别权重；参数布局与 mel 滤波器取自 whisper.cpp 的 for-tests-ggml-medium.bin；词元按原作者 vocab.json 的原始字节生成，沿用 Whisper / whisper.cpp 的 MIT 许可。

@@ -12,6 +12,8 @@ import Darwin
         setbuf(stdout, nil)
         let file = URL(fileURLWithPath: CommandLine.arguments[1])
         let output = URL(fileURLWithPath: CommandLine.arguments[2])
+        let baselineIDs: Set<String> = CommandLine.arguments.count > 3
+            ? Set(try TermLibrary.read(URL(fileURLWithPath: CommandLine.arguments[3])).entries.map(\.id)) : []
         let baseline = peakMiB(), started = seconds()
         let library: TermLibrary
         do { library = try TermLibrary.read(file) }
@@ -35,7 +37,7 @@ import Darwin
             throw error
         }
         let parseSeconds = seconds() - started
-        var report: [String: Any] = ["entries": library.entries.count, "bytes": try Data(contentsOf: file).count,
+        var report: [String: Any] = ["entries": library.entries.count, "sampleScope": baselineIDs.isEmpty ? "all" : "new entries only", "bytes": try Data(contentsOf: file).count,
             "parseSeconds": parseSeconds, "initialPeakMiB": baseline]
         let now = Date(), recent = (0..<40).map { TermMemoryTurn(text: "We evaluated statistical significance with analysis of variance.", date: now.addingTimeInterval(Double(-$0))) }
         var results: [[String: Any]] = []
@@ -47,11 +49,11 @@ import Darwin
             let indexSeconds = seconds() - start
             var times: [Double] = [], hits = 0, samples = 0
             for domain in library.domains {
-                let entries = library.entries.filter { $0.domain == domain.id && $0.forms[source] != nil && $0.forms[source == "en" ? "ko" : "en"] != nil }
+                let entries = library.entries.filter { $0.domain == domain.id && !baselineIDs.contains($0.id) && $0.forms[source] != nil && $0.forms[source == "en" ? "ko" : "en"] != nil }
                 let topic = domain.cues["en"]?.first ?? ""
                 for entry in entries.prefix(40) {
                     let begin = seconds()
-                    let hint = index.retrieve(text: entry.forms[source]!.preferred, source: source, target: source == "en" ? "ko" : "en", topic: topic, now: now)
+                    let hint = index.retrieve(text: entry.forms[source]!.preferred, source: source, target: source == "en" ? "ko" : "en", topic: topic, now: now, selectedDomains: [domain.id])
                     times.append(seconds() - begin); samples += 1
                     if hint?.termIDs.contains(entry.id) == true { hits += 1 }
                     precondition(hint == nil || hint!.estimatedTokens <= 300)

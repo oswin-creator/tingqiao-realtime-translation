@@ -99,6 +99,9 @@ struct CaptionScroll<Content: View>: View {
             .onChange(of: followsLatest) {
                 if followsLatest { scrollAfterLayout(proxy) } else { requests.cancel() }
             }
+            .background(GeometryReader { geometry in
+                Color.clear.onChange(of: geometry.size) { if followsLatest { scrollAfterLayout(proxy) } }
+            })
             .onDisappear { requests.cancel() }
         }
     }
@@ -111,7 +114,10 @@ struct CaptionScroll<Content: View>: View {
 struct FloatingCaptions: View {
     @ObservedObject var model: AppModel
     private var opacity: Binding<Double> {
-        Binding(get: { 1 - model.settings.floatingOpacity }, set: { model.settings.floatingOpacity = 1 - $0; model.updateFloatingAppearance() })
+        Binding(get: { 1 - model.settings.floatingOpacity }, set: {
+            model.settings.floatingOpacity = $0 >= 0.999 ? 0 : 1 - $0
+            model.updateFloatingAppearance()
+        })
     }
     var body: some View {
         VStack(spacing: 0) {
@@ -124,7 +130,7 @@ struct FloatingCaptions: View {
                 }
                 HStack(spacing: 4) {
                     Image(systemName: "circle.lefthalf.filled").font(.system(size: 10))
-                    Slider(value: opacity, in: 0...0.65).frame(width: 70).help("悬浮窗透明度")
+                    Slider(value: opacity, in: 0...1).frame(width: 70).help("背景透明度").accessibilityLabel("背景透明度")
                 }
                 Button {
                     model.settings.floatingAlwaysOnTop.toggle(); model.updateFloatingAppearance()
@@ -132,7 +138,7 @@ struct FloatingCaptions: View {
                         .foregroundStyle(model.settings.floatingAlwaysOnTop ? Palette.accent : Palette.muted) }
                     .help(model.settings.floatingAlwaysOnTop ? "取消始终置顶" : "始终置顶")
                     .accessibilityLabel("始终置顶")
-                Divider().frame(height: 14)
+                Divider().frame(height: 14).opacity(model.settings.floatingOpacity)
                 Button { changeFont(-2) } label: { Image(systemName: "textformat.size.smaller") }.help("减小字幕字号")
                     .disabled(model.settings.floatingFontSize <= 12)
                 Text("\(Int(model.settings.floatingFontSize))").monospacedDigit().font(.system(size: 10)).frame(width: 18)
@@ -144,10 +150,8 @@ struct FloatingCaptions: View {
                 Spacer()
                 AssistantButtons(model: model, compact: true)
             }.padding(.horizontal, 13).padding(.vertical, 4)
-            Divider().overlay(Palette.line)
-            if model.hideDesktopCaptions {
-                Label("电脑字幕已隐藏", systemImage: "eye.slash").foregroundStyle(Palette.muted).frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if model.allCaptions.isEmpty {
+            Divider().overlay(Palette.line).opacity(model.settings.floatingOpacity)
+            if model.allCaptions.isEmpty {
                 Text("等待下一句对话…").foregroundStyle(Palette.muted).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 CaptionScroll(followsLatest: $model.floatingFollowsLatest, captions: model.allCaptions) {
@@ -160,13 +164,15 @@ struct FloatingCaptions: View {
                                 Text(caption.displayText)
                                     .font(.system(size: model.settings.floatingFontSize, weight: .medium)).foregroundStyle(Palette.ink)
                             }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10).padding(.vertical, 7)
-                                .background(.white.opacity(0.78), in: RoundedRectangle(cornerRadius: 10)).textSelection(.enabled)
+                                .background(.white.opacity(0.78 * model.settings.floatingOpacity), in: RoundedRectangle(cornerRadius: 10)).textSelection(.enabled)
                         }
                     }.padding(10)
                 }
             }
             AssistantReplyRegion(presentation: model.assistantPresentation, compact: true)
-        }.background(LinearGradient(colors: [.white, Palette.canvas, Palette.sidebar], startPoint: .topLeading, endPoint: .bottomTrailing))
+        }.background(LinearGradient(colors: [.white.opacity(model.settings.floatingOpacity), Palette.canvas.opacity(model.settings.floatingOpacity), Palette.sidebar.opacity(model.settings.floatingOpacity)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            .environment(\.captionSurfaceOpacity, model.settings.floatingOpacity)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
             .ignoresSafeArea(.container, edges: .top).preferredColorScheme(.light)
     }
     private func changeFont(_ delta: Double) {

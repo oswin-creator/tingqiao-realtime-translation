@@ -18,7 +18,11 @@ final class AudioSegmenter {
     private var detector: VoiceActivityDetecting?
     private var pendingPCM: [Float] = []
     private var vadSpeaking = false
-    private var carriesOverlap = false
+    private var contextSamples: [Float] = []
+    private var sampleCursor: Int64 = 0
+    private var bufferStartSample: Int64 = 0
+    private var timelineID = UUID()
+    private var captureOrigin: Date?
     private var lastMeter = Date.distantPast
     private var windowID = UUID()
     private var lastPreview = 0.0
@@ -113,7 +117,10 @@ final class AudioSegmenter {
         let duration = Double(count) / 16000
         if energy > 0.0035 { energyVoiced += duration }
         if speech ?? (energy > 0.0035) { voiced += duration; silence = 0 } else { silence += duration }
+        if captureOrigin == nil { captureOrigin = Date().addingTimeInterval(-duration) }
+        if samples.isEmpty { bufferStartSample = sampleCursor }
         samples.append(contentsOf: values)
+        sampleCursor += Int64(count)
         if Date().timeIntervalSince(lastMeter) > 0.12 {
             lastMeter = Date(); onLevel?(min(1, energy * 12))
         }
@@ -125,13 +132,17 @@ final class AudioSegmenter {
             else if elapsed >= MeetingRules.maximumWindow { emit(keepOverlap: silence < 0.4 || (speech != nil && energy > 0.0035)) }
             else if voiced >= 0.3, silence < 1.0, elapsed - lastPreview >= MeetingRules.previewInterval, onWindow != nil {
                 lastPreview = elapsed
-                if let url = write(samples, draft: true) { onWindow?(SpeechWindow(id: windowID, url: url, date: Date().addingTimeInterval(-elapsed), overlap: carriesOverlap, isFinal: false, duration: elapsed)) }
+                if let url = write(contextSamples + samples, draft: true) {
+                    onWindow?(SpeechWindow(id: windowID, url: url, date: captureOrigin!.addingTimeInterval(Double(bufferStartSample) / 16000),
+                        overlap: !contextSamples.isEmpty, isFinal: false, duration: elapsed, contextSampleCount: contextSamples.count,
+                        audioStartSample: bufferStartSample - Int64(contextSamples.count), audioTimelineID: timelineID))
+                }
             }
-            // Idle silence must never produce an ever-growing buffer.
-            // Keep 0.5 s before speech. Energy without VAD confirmation is not
-            // aggressively thrown away: it reaches the maximum-window safety
-            // submission (or flush), rather than causing frequent noise cuts.
-            if voiced == 0 && energyVoiced == 0 && samples.count > 16000 { samples = Array(samples.suffix(8000)); silence = Double(samples.count) / 16000; lastPreview = 0 }
+            if voiced == 0 && energyVoiced == 0 && samples.count > 16000 {
+                let removed = samples.count - 8000
+                samples = Array(samples.suffix(8000)); bufferStartSample += Int64(removed)
+                silence = Double(samples.count) / 16000; lastPreview = 0; contextSamples.removeAll(keepingCapacity: true)
+            }
             return
         }
         if elapsed >= 5.0 { emit(keepOverlap: silence < 0.4) }
@@ -141,12 +152,13 @@ final class AudioSegmenter {
     func flush() {
         if !pendingPCM.isEmpty { let tail = pendingPCM; pendingPCM.removeAll(keepingCapacity: true); consumeVAD(tail) }
         if !samples.isEmpty { emit(keepOverlap: false) }
-        detector?.reset(); vadSpeaking = false
+        detector?.reset(); vadSpeaking = false; contextSamples.removeAll(keepingCapacity: true)
         converter = nil; previousFormat = nil
     }
     func discard() {
         samples.removeAll(keepingCapacity: true)
-        silence = 0; voiced = 0; energyVoiced = 0; carriesOverlap = false
+        silence = 0; voiced = 0; energyVoiced = 0; contextSamples.removeAll(keepingCapacity: true)
+        sampleCursor = 0; bufferStartSample = 0; timelineID = UUID(); captureOrigin = nil
         pendingPCM.removeAll(keepingCapacity: true); detector?.reset(); vadSpeaking = false
         windowID = UUID(); lastPreview = 0; complete = false; latestPause = 0
         converter = nil; previousFormat = nil
@@ -155,18 +167,19 @@ final class AudioSegmenter {
     private func emit(keepOverlap: Bool, cut: Int? = nil) {
         let count = min(cut ?? samples.count, samples.count)
         let captured = Array(samples.prefix(count)), remainder = Array(samples.dropFirst(count))
-        let id = windowID
-        let hadOverlap = carriesOverlap
+        let id = windowID, start = bufferStartSample
+        let prefix = contextSamples
         let hasSpeech = voiced >= 0.12 || energyVoiced >= 0.12
-        samples = (keepOverlap && hasSpeech ? Array(captured.suffix(8000)) : []) + remainder
-        carriesOverlap = keepOverlap && hasSpeech
+        contextSamples = keepOverlap && hasSpeech ? Array(captured.suffix(Int(MeetingRules.contextDuration * 16000))) : []
+        samples = remainder; bufferStartSample = start + Int64(count)
         voiced = 0; energyVoiced = 0; silence = 0
         windowID = UUID(); lastPreview = 0; complete = false; latestPause = 0
         if !remainder.isEmpty { voiced = Double(remainder.count) / 16000 }
-        guard hasSpeech, let url = write(captured, draft: false) else { return }
-        let date = Date().addingTimeInterval(-Double(captured.count + remainder.count) / 16000)
-        onSegment?(url, date, hadOverlap)
-        onWindow?(SpeechWindow(id: id, url: url, date: date, overlap: hadOverlap, isFinal: true, duration: Double(captured.count) / 16000))
+        guard hasSpeech, let url = write(prefix + captured, draft: false) else { return }
+        let date = (captureOrigin ?? Date()).addingTimeInterval(Double(start) / 16000)
+        onSegment?(url, date, !prefix.isEmpty)
+        onWindow?(SpeechWindow(id: id, url: url, date: date, overlap: !prefix.isEmpty, isFinal: true, duration: Double(captured.count) / 16000,
+            contextSampleCount: prefix.count, audioStartSample: start - Int64(prefix.count), audioTimelineID: timelineID))
     }
     private func write(_ captured: [Float], draft: Bool) -> URL? {
         guard let buffer = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: AVAudioFrameCount(captured.count)), let channel = buffer.floatChannelData?[0] else { return nil }

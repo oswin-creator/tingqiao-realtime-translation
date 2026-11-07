@@ -35,7 +35,6 @@ struct TingQiaoApp: App {
         MenuBarExtra("听桥", systemImage: model.isRunning ? "waveform.circle.fill" : "waveform.circle") {
             Text(model.status)
             Button(model.isRunning ? "结束收音" : "开始翻译") { if model.isRunning { model.stop() } else { model.start() } }.disabled(model.isStarting || model.isStopping)
-            Toggle("隐藏电脑字幕", isOn: $model.hideDesktopCaptions)
             Button("显示主窗口") {
                 NSApplication.shared.activate(ignoringOtherApps: true)
                 NSApplication.shared.windows.first { $0.title == "听桥" }?.makeKeyAndOrderFront(nil)

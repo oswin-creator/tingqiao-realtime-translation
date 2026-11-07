@@ -121,7 +121,7 @@ import CryptoKit
         let actualPack = project.appendingPathComponent("Resources/wikidata.json")
         let actual = TerminologyService(root: root.appendingPathComponent("real-bundled"), bundledURL: bundle, bundledWikidataURL: actualPack)
         let actualLoad = await actual.load()
-        check(actualLoad.0 == 10_041 && actualLoad.1.isEmpty, "shipped real pack yields 10041 valid deduplicated terms")
+        check(actualLoad.0 == 14_251 && actualLoad.1.isEmpty, "shipped real pack yields 14251 valid deduplicated terms")
         let actualHint = await actual.hint(text: "differential equation", source: "en", target: "ko", recent: [], topic: "mathematics", now: Date(), memory: true)
         check(actualHint?.termIDs.contains("wd-Q11214") == true, "real bundled pack supports English to Korean retrieval")
 

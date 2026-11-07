@@ -1,8 +1,52 @@
 {
-  "source": "Wikidata",
+  "added": 4142,
+  "bytes": 6657366,
+  "domains": {
+    "business": 1745,
+    "computer-science": 2235,
+    "law": 693,
+    "mathematics": 3946,
+    "medicine": 5151,
+    "statistics": 390
+  },
+  "entries": 14160,
+  "generatedAt": "2026-11-06T03:01:47.500374+00:00",
+  "languages": {
+    "ar": 5537,
+    "de": 8832,
+    "en": 14160,
+    "es": 8155,
+    "fr": 9813,
+    "hi": 1102,
+    "id": 2435,
+    "it": 5189,
+    "ja": 10087,
+    "ko": 7153,
+    "pt": 6221,
+    "ru": 5792,
+    "th": 1371,
+    "vi": 2139,
+    "zh-CN": 10338,
+    "zh-TW": 10349
+  },
   "license": "CC0-1.0",
+  "mappingLicense": "CC0-1.0",
+  "mappingSource": "https://zbw.eu/stw/version/latest/mapping/wikidata/about.en.html",
+  "previousEntries": 10018,
+  "rejected": {
+    "domain_evidence_missing": 8475,
+    "encyclopedic_coverage": 134,
+    "geography_or_person": 301,
+    "identical_multilingual_signature": 1,
+    "lexical_quality": 1736,
+    "media_or_story": 18,
+    "non_economic_physical_entity": 3,
+    "unavailable_entity": 998
+  },
   "schemaVersion": 1,
-  "entries": 10018,
-  "sha256": "e75b3651de59c80641a120ffec22363624769dc00ca3d2c620a9ddbaefea0b47",
-  "generatedAt": "2026-11-05T11:45:10.554090+00:00"
+  "selection": "Existing entries retained; source-attested labels only; >=3 independent languages, >=2 Wikipedia articles; exact STW mapping only; MeSH descriptors, not supplementary concepts; geography/person exclusions",
+  "sha256": "1e2000d7649e17f183269deb88f2fd874ad73fae55dabaf37ea1721af7eb890e",
+  "source": "Wikidata",
+  "stwDataDownloadedButLabelsNotImported": true,
+  "unverifiedNotAdded": 0
 }

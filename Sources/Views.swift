@@ -28,13 +28,36 @@ struct SmallLabel: View {
     var body: some View { Text(title).font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.muted) }
 }
 
+struct WorkspaceLayout {
+    var size = CGSize(width: 1260, height: 860)
+    var density: CGFloat { min(1, max(0, (size.height - 640) / 220)) }
+    var width: CGFloat { min(1, max(0, (size.width - 1000) / 260)) }
+    var padding: CGFloat { 16 + 10 * density }
+    var gap: CGFloat { 10 + 8 * density }
+    var sidebarWidth: CGFloat { 176 + 29 * width }
+    var railWidth: CGFloat { 236 + 10 * width }
+}
+
+private struct WorkspaceLayoutKey: EnvironmentKey {
+    static let defaultValue = WorkspaceLayout()
+}
+
+extension EnvironmentValues {
+    var workspaceLayout: WorkspaceLayout {
+        get { self[WorkspaceLayoutKey.self] }
+        set { self[WorkspaceLayoutKey.self] = newValue }
+    }
+}
+
 struct MainView: View {
     @ObservedObject var model: AppModel
     var body: some View {
-        HStack(spacing: 0) {
+        GeometryReader { geometry in
+            let layout = WorkspaceLayout(size: geometry.size)
+            HStack(spacing: 0) {
             Sidebar(model: model)
             VStack(spacing: 0) {
-                header
+                header(layout)
                 Divider().overlay(Palette.line)
                 Group {
                     switch model.section {
@@ -50,19 +73,23 @@ struct MainView: View {
                             WalkthroughCard(model: model, step: step).padding(20)
                         }
                     }
-                footer
+                footer(layout)
             }.background(Palette.canvas)
+            }.environment(\.workspaceLayout, layout)
         }
         .foregroundStyle(Palette.ink)
         .font(.system(size: 13))
-        .frame(minWidth: 1120, minHeight: 730)
+        .frame(minWidth: 1000, minHeight: 640)
         .preferredColorScheme(.light)
+        .sheet(isPresented: $model.choosingMeetingDomains) {
+            MeetingDomainSelectionView(model: model)
+        }
         .onAppear { model.loadSecrets(); model.offerWalkthrough() }
     }
-    private var header: some View {
+    private func header(_ layout: WorkspaceLayout) -> some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(model.section).font(.system(size: 23, weight: .semibold))
+                Text(model.section).font(.system(size: 20 + 3 * layout.density, weight: .semibold))
                 Text(subtitle).font(.system(size: 12)).foregroundStyle(Palette.muted)
             }
             Spacer()
@@ -79,7 +106,7 @@ struct MainView: View {
             Label(model.isRunning ? "收音进行中" : "准备就绪", systemImage: model.isRunning ? "waveform" : "checkmark.circle")
                 .font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.mint)
                 .padding(.horizontal, 13).padding(.vertical, 9).background(Palette.mint.opacity(0.08), in: Capsule())
-        }.padding(.horizontal, 30).padding(.top, 28).padding(.bottom, 22)
+        }.padding(.horizontal, layout.padding + 4).padding(.top, 18 + 10 * layout.density).padding(.bottom, 12 + 10 * layout.density)
     }
     private var subtitle: String {
         switch model.section {
@@ -90,39 +117,88 @@ struct MainView: View {
         default: return "跨过语言，跟上每一段对话。"
         }
     }
-    private var footer: some View {
+    private func footer(_ layout: WorkspaceLayout) -> some View {
         HStack(spacing: 8) {
             Circle().fill(model.isReconnecting ? .orange : model.isRunning ? Palette.mint : Palette.muted.opacity(0.5)).frame(width: 6, height: 6)
-            Text(model.status).font(.system(size: 11))
+            Text(model.status).font(.system(size: 11)).lineLimit(1)
             Spacer()
             if model.pendingCount > 0 { Text("\(model.pendingCount) 段待处理").font(.system(size: 11)).foregroundStyle(Palette.accent) }
             Text("听桥 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")").font(.system(size: 11)).foregroundStyle(Palette.muted)
-        }.foregroundStyle(Palette.muted).padding(.horizontal, 30).padding(.vertical, 13).background(.white.opacity(0.65))
+        }.foregroundStyle(Palette.muted).padding(.horizontal, layout.padding + 4).padding(.vertical, 8 + 5 * layout.density).background(.white.opacity(0.65))
+    }
+}
+
+struct MeetingDomainGrid: View {
+    var domains: [String]
+    @Binding var selection: [String]
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 10) {
+            ForEach(domains, id: \.self) { domain in
+                Toggle(MeetingDomain(rawValue: domain)?.title ?? domain, isOn: Binding(get: { selection.contains(domain) }, set: { selected in
+                    if selected { selection = Array(Set(selection + [domain])).sorted() }
+                    else { selection.removeAll { $0 == domain } }
+                }))
+                .toggleStyle(.checkbox).font(.system(size: 12, weight: .medium))
+                .frame(maxWidth: .infinity, alignment: .leading).padding(13)
+                .background(selection.contains(domain) ? Palette.accent.opacity(0.06) : Palette.canvas, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(selection.contains(domain) ? Palette.accent.opacity(0.3) : Palette.line, lineWidth: 1))
+            }
+        }.tint(Palette.accent)
+    }
+}
+
+struct MeetingDomainSelectionView: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            HStack(spacing: 12) {
+                Image(systemName: "books.vertical").font(.system(size: 23)).foregroundStyle(Palette.accent)
+                    .frame(width: 48, height: 48).background(Palette.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 13))
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("本次会议的专业领域").font(.system(size: 20, weight: .semibold))
+                    Text("选择词库分区，可多选。").font(.system(size: 12)).foregroundStyle(Palette.muted)
+                }
+            }
+            ScrollView {
+                MeetingDomainGrid(domains: model.terminologyDomainIDs, selection: $model.meetingDomainSelection)
+            }.frame(maxHeight: 260)
+            HStack {
+                Text(model.meetingDomainSelection.isEmpty ? "普通翻译" : "已选 \(model.meetingDomainSelection.count) 个领域")
+                    .font(.system(size: 11)).foregroundStyle(Palette.muted)
+                Spacer()
+                Button("取消") { model.choosingMeetingDomains = false }.keyboardShortcut(.cancelAction)
+                Button("开始收音") { model.confirmMeetingDomains() }.buttonStyle(.borderedProminent).tint(Palette.accent).keyboardShortcut(.defaultAction)
+            }
+        }.padding(28).frame(width: 520).fixedSize(horizontal: false, vertical: true)
+            .foregroundStyle(Palette.ink).background(.white).preferredColorScheme(.light)
     }
 }
 
 struct Sidebar: View {
     @ObservedObject var model: AppModel
+    @Environment(\.workspaceLayout) private var layout
     let items = [("会议翻译", "waveform"), ("手机字幕", "iphone"), ("会议记录", "text.book.closed"), ("翻译设置", "slider.horizontal.3"), ("问答大模型设置", "bubble.left.and.bubble.right")]
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 11) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 13).fill(LinearGradient(colors: [Palette.accent, Color(red: 0.52, green: 0.46, blue: 0.94)], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 43, height: 43)
-                    Image(systemName: "waveform").font(.system(size: 23, weight: .semibold)).foregroundStyle(.white)
+                    RoundedRectangle(cornerRadius: 13).fill(LinearGradient(colors: [Palette.accent, Color(red: 0.52, green: 0.46, blue: 0.94)], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 36 + 7 * layout.density, height: 36 + 7 * layout.density)
+                    Image(systemName: "waveform").font(.system(size: 20 + 3 * layout.density, weight: .semibold)).foregroundStyle(.white)
                 }
                 VStack(alignment: .leading, spacing: 3) { Text("听桥").font(.system(size: 23, weight: .bold)); Text("TINGQIAO").font(.system(size: 8, weight: .semibold, design: .rounded)).tracking(2).foregroundStyle(Palette.muted) }
-            }.padding(.top, 52).padding(.bottom, 38).padding(.horizontal, 24)
+            }.padding(.top, 32 + 20 * layout.density).padding(.bottom, 20 + 18 * layout.density).padding(.horizontal, 20)
             Text("工作空间").font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.muted).padding(.leading, 26).padding(.bottom, 12)
             ForEach(items, id: \.0) { title, icon in
                 Button { model.section = title } label: {
                     HStack(spacing: 12) {
                         Image(systemName: icon).font(.system(size: 15)).frame(width: 22)
-                        Text(title).font(.system(size: 13, weight: model.section == title ? .semibold : .regular))
+                        Text(title == "问答大模型设置" ? "会议助手" : title).font(.system(size: 12 + layout.density, weight: model.section == title ? .semibold : .regular)).lineLimit(1)
                         Spacer()
                         if title == "手机字幕", model.phoneEnabled { Circle().fill(Palette.mint).frame(width: 5, height: 5) }
                     }.foregroundStyle(model.section == title ? Palette.accent : Palette.muted)
-                        .padding(.horizontal, 15).padding(.vertical, 13)
+                        .padding(.horizontal, 13).padding(.vertical, 10 + 3 * layout.density)
                         .background(model.section == title ? .white : .clear, in: RoundedRectangle(cornerRadius: 11))
                 }.buttonStyle(.plain).padding(.horizontal, 13).padding(.bottom, 6)
             }
@@ -130,35 +206,36 @@ struct Sidebar: View {
             HStack {
                 Image(systemName: "sparkle").foregroundStyle(Palette.accent)
                 Text("让每一句，都听得懂").font(.system(size: 11, weight: .medium))
-            }.padding(17).frame(maxWidth: .infinity, alignment: .leading).background(.white.opacity(0.65), in: RoundedRectangle(cornerRadius: 14)).padding(14)
+            }.padding(12 + 5 * layout.density).frame(maxWidth: .infinity, alignment: .leading).background(.white.opacity(0.65), in: RoundedRectangle(cornerRadius: 14)).padding(12)
             HStack(spacing: 7) { Image(systemName: "lock.shield"); Text("记录保存在这台 Mac") }.font(.system(size: 10)).foregroundStyle(Palette.muted).padding(.leading, 23).padding(.bottom, 23)
-        }.frame(width: 205).background(Palette.sidebar)
+        }.frame(width: layout.sidebarWidth).background(Palette.sidebar)
     }
 }
 
 struct MeetingView: View {
     @ObservedObject var model: AppModel
+    @Environment(\.workspaceLayout) private var layout
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: layout.gap) {
             sourceCard
-            if !model.notice.isEmpty { NoticeBar(text: model.notice) { model.notice = "" } }
-            HStack(alignment: .top, spacing: 20) {
+            HStack(alignment: .top, spacing: layout.gap + 2) {
                 VStack(spacing: 10) {
+                    if !model.notice.isEmpty { NoticeBar(text: model.notice) { model.notice = "" } }
                     captionsArea.frame(maxWidth: .infinity, maxHeight: .infinity)
-                    AssistantReplyRegion(presentation: model.assistantPresentation)
+                    AssistantReplyRegion(presentation: model.assistantPresentation, compact: layout.density < 0.4)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
-                rail.frame(width: 246)
+                rail.frame(width: layout.railWidth)
             }.frame(maxHeight: .infinity)
             controlBar
-        }.padding(26)
+        }.padding(layout.padding)
     }
     private var sourceCard: some View {
-        SoftCard(padding: 18) {
-            HStack(spacing: 22) {
+        SoftCard(padding: 12 + 6 * layout.density) {
+            HStack(spacing: 14 + 8 * layout.density) {
                 HStack(spacing: 4) {
                     ForEach(MeetingMode.allCases, id: \.self) { mode in
                         Button { model.settings.mode = mode; model.settings.save() } label: {
-                            Label(mode.rawValue, systemImage: mode.icon).font(.system(size: 12, weight: .medium)).padding(.horizontal, 15).padding(.vertical, 11)
+                            Label(mode.rawValue, systemImage: mode.icon).font(.system(size: 12, weight: .medium)).padding(.horizontal, 12 + 3 * layout.density).padding(.vertical, 8 + 3 * layout.density)
                                 .foregroundStyle(model.settings.mode == mode ? Palette.accent : Palette.muted)
                                 .background(model.settings.mode == mode ? .white : .clear, in: RoundedRectangle(cornerRadius: 9))
                         }.buttonStyle(.plain)
@@ -184,7 +261,7 @@ struct MeetingView: View {
         }
     }
     private var captionsArea: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 10 + 6 * layout.density) {
             HStack {
                 Label("实时字幕", systemImage: "captions.bubble").font(.system(size: 13, weight: .semibold))
                 if model.stylePreview { Text("样式预览").font(.system(size: 10)).foregroundStyle(Palette.accent).padding(.horizontal, 7).padding(.vertical, 3).background(Palette.accent.opacity(0.08), in: Capsule()) }
@@ -195,10 +272,8 @@ struct MeetingView: View {
                 RecordActions(model: model)
                 Button { model.settings.showOriginal.toggle(); model.settings.save() } label: { Label(model.settings.showOriginal ? "双语" : "只看译文", systemImage: "character.bubble").font(.system(size: 11)).foregroundStyle(Palette.muted) }.buttonStyle(.plain)
             }
-            if model.hideDesktopCaptions {
-                emptyView(icon: "eye.slash", title: "电脑字幕已隐藏", detail: "收音和翻译继续进行。\n你可以在手机上安静地看字幕。")
-            } else if model.captions.isEmpty && !model.stylePreview {
-                emptyView(icon: "waveform.bubble", title: "准备好，听懂下一句话", detail: "选好声音来源和语言，点击下方“开始翻译”。\n对方的原文和译文会出现在这里。")
+            if model.captions.isEmpty && !model.stylePreview {
+                emptyView(icon: "captions.bubble", title: "准备好，听懂下一句话", detail: "选好声音来源和语言，点击下方“开始翻译”。\n对方的原文和译文会出现在这里。")
             } else {
                 CaptionScroll(followsLatest: $model.mainFollowsLatest, captions: model.captions) {
                     LazyVStack(alignment: .leading, spacing: 15) {
@@ -213,21 +288,44 @@ struct MeetingView: View {
         }
     }
     private func emptyView(icon: String, title: String, detail: String) -> some View {
-        VStack(spacing: 17) {
-            Spacer()
-            Image(systemName: icon).font(.system(size: 38, weight: .light)).foregroundStyle(Palette.accent.opacity(0.75)).frame(width: 88, height: 88).background(Palette.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: 27))
-            Text(title).font(.system(size: 20, weight: .medium))
-            Text(detail).font(.system(size: 12)).foregroundStyle(Palette.muted).multilineTextAlignment(.center).lineSpacing(7)
-            if !model.hideDesktopCaptions { Button("预览字幕样式") { model.stylePreview = true }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Palette.accent).padding(.top, 8) }
-            Spacer()
-        }.frame(maxWidth: .infinity, maxHeight: .infinity).background(.white.opacity(0.6), in: RoundedRectangle(cornerRadius: 18)).overlay(RoundedRectangle(cornerRadius: 18).stroke(Palette.line, style: StrokeStyle(lineWidth: 1, dash: [5, 5])))
+        GeometryReader { geometry in
+            let room = min(1, max(0, (geometry.size.height - 110) / 180))
+            VStack(spacing: 8 + 9 * room) {
+                Spacer(minLength: 0)
+                Image(systemName: icon).font(.system(size: 24 + 14 * room, weight: .light))
+                    .foregroundStyle(Palette.accent.opacity(0.75))
+                    .frame(width: 48 + 40 * room, height: 88 * room)
+                    .background(Palette.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: 18 + 9 * room))
+                    .opacity(room)
+                Text(title).font(.system(size: 16 + 4 * room, weight: .medium)).lineLimit(1).minimumScaleFactor(0.85)
+                Text(detail).font(.system(size: 11 + room)).foregroundStyle(Palette.muted)
+                    .multilineTextAlignment(.center).lineSpacing(4)
+                    .frame(height: 40 * room).clipped().opacity(room)
+                Button("预览字幕样式") { model.stylePreview = true }
+                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Palette.accent)
+                Spacer(minLength: 0)
+            }.padding(.horizontal, 16).frame(width: geometry.size.width, height: geometry.size.height)
+        }.background(.white.opacity(0.6), in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(Palette.line, style: StrokeStyle(lineWidth: 1, dash: [5, 5])))
     }
     private var rail: some View {
-        VStack(spacing: 16) {
-            SoftCard(padding: 18) {
-                VStack(alignment: .leading, spacing: 14) {
-                    SmallLabel(title: "语言与翻译")
-                    HStack(alignment: .bottom, spacing: 8) {
+        VStack(spacing: 10 + 6 * layout.density) {
+            SoftCard(padding: 13 + 5 * layout.density) {
+                VStack(alignment: .leading, spacing: 9 + 3 * layout.density) {
+                    Button {
+                        model.terminologySetupRequested = true; model.section = "翻译设置"
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Label("专业领域", systemImage: "text.book.closed").font(.system(size: 11, weight: .medium))
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(Palette.muted)
+                            }
+                            Text(MeetingDomain.summary(model.settings.terminologyDomains)).font(.system(size: 10))
+                                .foregroundStyle(Palette.muted).lineLimit(2)
+                        }
+                    }.buttonStyle(.plain).disabled(model.languageSelectionLocked)
+                    HStack(alignment: .bottom, spacing: 6) {
                         VStack(alignment: .leading, spacing: 5) {
                             SmallLabel(title: "原文")
                             SourceLanguagePicker(model: model).labelsHidden()
@@ -241,50 +339,80 @@ struct MeetingView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }.disabled(model.languageSelectionLocked)
                     if model.settings.language == model.settings.targetLanguage.rawValue {
-                        Text("两种语言相同，仅生成原文字幕。").font(.system(size: 10)).foregroundStyle(Palette.muted)
+                        Text("仅生成原文字幕").font(.system(size: 10)).foregroundStyle(Palette.muted)
                     }
                     Rectangle().fill(Palette.line).frame(height: 1)
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: model.settings.provider == .custom ? "sparkles" : "globe.asia.australia").foregroundStyle(Palette.accent).frame(width: 31, height: 31).background(Palette.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 9))
-                        VStack(alignment: .leading, spacing: 5) { Text(model.settings.provider.rawValue).font(.system(size: 12, weight: .medium)); Text(model.settings.recognitionEngine == .whisperTurbo ? "Whisper Turbo · 本机识别" : model.settings.localRecognition ? "Apple · 本机识别" : "语音由 Apple 识别").font(.system(size: 10)).foregroundStyle(Palette.muted) }
+                    HStack(spacing: 9) {
+                        Image(systemName: model.settings.provider == .custom ? "sparkles" : "globe.asia.australia")
+                            .foregroundStyle(Palette.accent).frame(width: 30, height: 30)
+                            .background(Palette.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 9))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(model.settings.provider.rawValue).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                            Text(model.settings.recognitionEngine.isLocalModel ? "\(model.settings.recognitionEngine.shortTitle) · 本机识别" : model.settings.localRecognition ? "Apple · 本机识别" : "Apple 在线识别")
+                                .font(.system(size: 10)).foregroundStyle(Palette.muted).lineLimit(1)
+                        }
                     }
-                    Button { model.section = "翻译设置" } label: { HStack { Text("调整翻译设置"); Spacer(); Image(systemName: "chevron.right") }.font(.system(size: 11)).foregroundStyle(Palette.muted) }.buttonStyle(.plain)
-                    Button { model.section = "问答大模型设置" } label: { HStack { Text("问答大模型设置"); Spacer(); Image(systemName: "chevron.right") }.font(.system(size: 11)).foregroundStyle(Palette.muted) }.buttonStyle(.plain)
+                    HStack(spacing: 10) {
+                        Button { model.section = "翻译设置" } label: { Label("翻译设置", systemImage: "slider.horizontal.3") }
+                        Spacer(minLength: 0)
+                        Button { model.section = "问答大模型设置" } label: { Label("助手设置", systemImage: "bubble.left.and.bubble.right") }
+                    }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Palette.muted)
                     AssistantButtons(model: model)
                 }
             }
-            SoftCard(padding: 18) {
-                VStack(alignment: .leading, spacing: 15) {
-                    HStack { Image(systemName: "iphone").foregroundStyle(Palette.accent); Text("随身字幕").font(.system(size: 13, weight: .semibold)); Spacer(); Circle().fill(model.phoneEnabled ? Palette.mint : Palette.line).frame(width: 6, height: 6) }
-                    Text("字幕放在手机上，\n电脑留给会议。") .font(.system(size: 12)).foregroundStyle(Palette.muted).lineSpacing(6)
-                    Button { model.section = "手机字幕" } label: { HStack { Text(model.phoneEnabled ? "查看配对二维码" : "连接我的手机"); Spacer(); Image(systemName: "arrow.up.right") }.font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.accent).padding(11).background(Palette.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 9)) }.buttonStyle(.plain)
+            Button { model.section = "手机字幕" } label: {
+                SoftCard(padding: 12 + 3 * layout.density) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "iphone").font(.system(size: 21)).foregroundStyle(Palette.accent)
+                            .frame(width: 32, height: 34)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("随身字幕").font(.system(size: 12, weight: .semibold))
+                            Text(model.phoneEnabled || model.bluetoothEnabled ? "查看手机连接" : "连接手机阅读字幕")
+                                .font(.system(size: 10)).foregroundStyle(Palette.muted)
+                        }
+                        Spacer(minLength: 0)
+                        if model.phoneEnabled || model.bluetoothConnections > 0 { Circle().fill(Palette.mint).frame(width: 5, height: 5) }
+                        Image(systemName: "arrow.up.right").font(.system(size: 10)).foregroundStyle(Palette.accent)
+                    }
                 }
+            }.buttonStyle(.plain)
+            if model.stylePreview {
+                Button("退出样式预览") { model.stylePreview = false }.buttonStyle(.plain)
+                    .font(.system(size: 11)).foregroundStyle(Palette.muted)
             }
-            VStack(alignment: .leading, spacing: 12) {
-                Toggle("隐藏电脑字幕", isOn: $model.hideDesktopCaptions).toggleStyle(.switch).controlSize(.mini)
-                Toggle("字幕悬浮窗", isOn: Binding(get: { model.floatingVisible }, set: { model.setFloating($0) })).toggleStyle(.switch).controlSize(.mini).disabled(model.hideDesktopCaptions)
-            }.font(.system(size: 11)).foregroundStyle(Palette.muted).padding(.horizontal, 7)
-            if model.stylePreview { Button("退出样式预览") { model.stylePreview = false }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Palette.muted) }
         }
     }
     private var controlBar: some View {
-        HStack(spacing: 15) {
-            HStack(alignment: .center, spacing: 3) {
+        HStack(spacing: 12 + 3 * layout.density) {
+            HStack(alignment: .center, spacing: 2 + layout.density) {
                 ForEach(0..<18) { index in
                     RoundedRectangle(cornerRadius: 2).fill(model.isRunning ? Palette.accent.opacity(Double(index) < model.level * 18 + 1 ? 0.8 : 0.12) : Palette.line)
-                        .frame(width: 3, height: CGFloat([9, 14, 21, 14, 25, 33, 18, 26, 15, 22, 31, 20, 14, 24, 16, 10, 17, 8][index]))
+                        .frame(width: 2 + layout.density, height: CGFloat([9, 14, 21, 14, 25, 33, 18, 26, 15, 22, 31, 20, 14, 24, 16, 10, 17, 8][index]) * (0.7 + 0.3 * layout.density))
                 }
-            }.frame(height: 34)
+            }.frame(height: 24 + 10 * layout.density)
             VStack(alignment: .leading, spacing: 4) {
-                Text(model.isReconnecting ? "正在恢复声音连接" : model.isRunning ? "正在聆听" : "开始一场没有语言距离的会议").font(.system(size: 12, weight: .medium))
-                Text(model.isRunning ? "声音片段会持续保存并翻译" : "首次使用需要允许系统收音权限").font(.system(size: 10)).foregroundStyle(Palette.muted)
+                Text(model.isReconnecting ? "正在恢复声音连接" : model.isRunning ? "正在聆听" : "准备开始会议")
+                    .font(.system(size: 12, weight: .medium)).lineLimit(1)
+                Text(model.settings.mode == .online ? "系统声音" : "麦克风收音").font(.system(size: 10)).foregroundStyle(Palette.muted)
             }
-            Spacer()
-            if model.pendingCount > 0 { Button { model.retryPending() } label: { Image(systemName: "arrow.clockwise") }.help("重试待处理内容").buttonStyle(.plain).foregroundStyle(Palette.accent) }
+            Spacer(minLength: 4)
+            Toggle("字幕悬浮窗", isOn: Binding(get: { model.floatingVisible }, set: { model.setFloating($0) }))
+                .toggleStyle(.switch).controlSize(.mini).font(.system(size: 11)).foregroundStyle(Palette.muted)
+                .fixedSize().padding(.trailing, 6)
+            if model.pendingCount > 0 {
+                Button { model.retryPending() } label: { Image(systemName: "arrow.clockwise") }
+                    .help("重试待处理内容").buttonStyle(.plain).foregroundStyle(Palette.accent)
+            }
             Button { if model.isRunning { model.stop() } else { model.stylePreview = false; model.start() } } label: {
-                HStack(spacing: 9) { Image(systemName: model.isRunning ? "stop.fill" : "play.fill"); Text(model.isStarting ? "正在准备…" : model.isStopping ? "正在停止…" : model.isRunning ? "结束收音" : "开始翻译") }.font(.system(size: 13, weight: .semibold)).foregroundStyle(.white).padding(.horizontal, 24).padding(.vertical, 14).background(model.isRunning ? Palette.ink : Palette.accent, in: RoundedRectangle(cornerRadius: 12))
-            }.buttonStyle(.plain).disabled(model.isStarting || model.isStopping || model.installingAppleLanguage).keyboardShortcut(.return, modifiers: .command)
-        }.padding(18).background(.white, in: RoundedRectangle(cornerRadius: 17)).overlay(RoundedRectangle(cornerRadius: 17).stroke(Palette.line, lineWidth: 1))
+                HStack(spacing: 9) {
+                    Image(systemName: model.isRunning ? "stop.fill" : "play.fill")
+                    Text(model.isStarting ? "正在准备…" : model.isStopping ? "正在停止…" : model.isRunning ? "结束收音" : "开始翻译")
+                }.font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                    .padding(.horizontal, 20 + 4 * layout.density).padding(.vertical, 10 + 4 * layout.density)
+                    .background(model.isRunning ? Palette.ink : Palette.accent, in: RoundedRectangle(cornerRadius: 12))
+            }.buttonStyle(.plain).disabled(model.isStarting || model.isStopping || model.installingAppleLanguage || model.downloadingWhisper).keyboardShortcut(.return, modifiers: .command)
+        }.padding(12 + 6 * layout.density).background(.white, in: RoundedRectangle(cornerRadius: 17))
+            .overlay(RoundedRectangle(cornerRadius: 17).stroke(Palette.line, lineWidth: 1))
     }
     private var sampleCaptions: [Caption] {
         [Caption(id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, date: Date(), original: "Let's start with a quick overview of the project.", translated: "我们先来快速了解一下项目的整体情况。"), Caption(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!, date: Date(), original: "이번 주에는 사용자 피드백을 중심으로 논의하겠습니다.", translated: "这周我们将围绕用户反馈展开讨论。"), Caption(id: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!, date: Date(), original: "We want to make the experience simpler for everyone.", translated: "我们希望让每个人都能更轻松地使用。")]
@@ -312,7 +440,8 @@ struct NoticeBar: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "info.circle").foregroundStyle(Palette.accent)
-            Text(text).font(.system(size: 11)).lineSpacing(4).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+            Text(text).font(.system(size: 11)).lineSpacing(4).lineLimit(3).help(text)
+                .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
             Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 10)).foregroundStyle(Palette.muted) }.buttonStyle(.plain)
         }.padding(13).background(Palette.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: 11))
     }
@@ -375,6 +504,7 @@ private struct SettingsRow<Content: View>: View {
 private final class TranslationSettingsState: ObservableObject {
     @Published var tab: TranslationSettingsTab = .recognition
     @Published var showingRules = false
+    @Published var showingAppleInstall = false
 }
 
 struct TranslationSettingsView: View {
@@ -397,13 +527,13 @@ struct TranslationSettingsView: View {
                 Spacer(minLength: 0)
             }.padding(5).background(Palette.sidebar.opacity(0.65), in: RoundedRectangle(cornerRadius: 13))
                 .padding(.horizontal, 28).padding(.top, 20).padding(.bottom, 16)
-            ScrollView {
+            ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
                     if model.secretsLoading {
-                        hint("正在等待 macOS 允许读取已保存的密钥，其他功能可以继续使用。")
+                        hint("请在 macOS 提示中允许读取已保存的密钥。")
                     } else if model.keychainNeedsAccess {
                         HStack {
-                            hint("密钥尚未读取；空白输入框不会删除已保存的密钥。")
+                            hint("尚未读取密钥，请允许访问钥匙串后重试。")
                             Button("重新读取") { model.loadSecrets() }
                         }
                     }
@@ -430,8 +560,27 @@ struct TranslationSettingsView: View {
                 .background(.white).overlay(alignment: .top) { Rectangle().fill(Palette.line).frame(height: 1) }
         }
         .tint(Palette.accent)
-        .onAppear { followWalkthrough() }
+        .onAppear {
+            if model.terminologySetupRequested { form.tab = .terminology; model.terminologySetupRequested = false }
+            followWalkthrough()
+        }
         .onChange(of: model.walkthroughStep) { followWalkthrough() }
+        .onAppear { model.refreshLocalModels() }
+        .sheet(item: $model.modelInstallPrompt) { item in
+            ModelInstallSheet(model: model, item: item)
+        }
+        .sheet(isPresented: $form.showingAppleInstall) {
+            AppleModelInstallSheet(language: MeetingLanguage.sourceName(model.settings.language), cancel: { form.showingAppleInstall = false }, install: {
+                form.showingAppleInstall = false; model.installAppleLanguage()
+            })
+        }
+        .alert("移除本地模型？", isPresented: Binding(get: { model.modelRemovalPrompt != nil }, set: { if !$0 { model.modelRemovalPrompt = nil } }), presenting: model.modelRemovalPrompt) { item in
+            Button("取消", role: .cancel) { model.modelRemovalPrompt = nil }
+            Button("移除模型", role: .destructive) { model.removeLocalModel(item) }
+        } message: { item in
+            Text("将移除 \(item.title)，释放 \(item.installedSize) 空间。需要时可重新下载。")
+        }
+
     }
 
     private func followWalkthrough() {
@@ -445,12 +594,12 @@ struct TranslationSettingsView: View {
     private var separator: some View { Rectangle().fill(Palette.line.opacity(0.8)).frame(height: 1) }
 
     private var recognitionPanel: some View {
-        SettingsPanel(title: "把声音识别成原文", subtitle: "先听写，再翻译。Whisper 适合本地多语言识别，所有支持的语言共用一份模型。") {
+        SettingsPanel(title: "把声音识别成原文", subtitle: "选择适合会议语言的识别模型，在本机生成字幕。") {
             SettingsRow(title: "识别引擎") {
                 Picker("识别引擎", selection: $model.settings.recognitionEngine) {
                     ForEach(RecognitionEngine.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }.labelsHidden().fixedSize().frame(maxWidth: 330, alignment: .leading).disabled(model.languageSelectionLocked)
-                    .onChange(of: model.settings.recognitionEngine) { model.recognitionInfo = "" }
+                    .onChange(of: model.settings.recognitionEngine) { model.recognitionInfo = ""; model.refreshLocalModels() }
             }
             SettingsRow(title: "语言方向", detail: "与主页面保持同步") {
                 HStack(spacing: 12) {
@@ -462,28 +611,19 @@ struct TranslationSettingsView: View {
                 }.frame(maxWidth: 430)
             }
             separator
-            if model.settings.recognitionEngine == .whisperTurbo {
+            if let localModel = LocalModel.find(model.settings.recognitionEngine) {
                 SettingsRow(title: "本地模型") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label(model.whisperInstalled ? "已安装 · 声音仅在本机处理" : "首次使用需下载约 1.6 GB", systemImage: model.whisperInstalled ? "checkmark.circle.fill" : "arrow.down.circle")
-                            .font(.system(size: 12)).foregroundStyle(model.whisperInstalled ? Palette.mint : Palette.muted)
-                        HStack(spacing: 10) {
-                            Button(model.downloadingWhisper ? "正在下载…" : model.whisperInstalled ? "已安装" : "下载模型") { model.downloadWhisper() }
-                                .disabled(model.whisperInstalled || model.downloadingWhisper || model.languageSelectionLocked)
-                            Button("导入已有模型…") { model.importWhisper() }.disabled(model.downloadingWhisper || model.languageSelectionLocked)
-                        }
-                        hint("无需为每种语言重复下载。模型在本机运行，会增加一些用电和内存占用。")
-                    }
+                    LocalModelControls(model: model, item: localModel)
                 }
             } else {
                 SettingsRow(title: "隐私与语言") {
                     VStack(alignment: .leading, spacing: 12) {
                         Toggle("只在本机识别语音", isOn: $model.settings.localRecognition).toggleStyle(.switch).disabled(model.languageSelectionLocked)
-                        hint("在系统设置「键盘 → 听写」中管理语言。关闭本机模式后，声音可能发送给 Apple 在线识别；语言资源不会自动下载。")
+                        hint("在「系统设置 → 键盘 → 听写」中管理语言。在线识别时，声音会发送给 Apple。")
                         HStack(spacing: 10) {
                             Button("打开系统语言设置 ↗") { model.openAppleLanguageSettings() }
                             if #available(macOS 26.0, *), model.settings.localRecognition {
-                                Button(model.installingAppleLanguage ? "正在准备…" : "下载当前语言资源") { model.installAppleLanguage() }.disabled(model.languageSelectionLocked)
+                                Button(model.installingAppleLanguage ? "正在准备…" : "下载当前语言资源") { form.showingAppleInstall = true }.disabled(model.languageSelectionLocked)
                             }
                         }
                     }
@@ -509,9 +649,10 @@ struct TranslationSettingsView: View {
                             VStack(alignment: .leading, spacing: 13) {
                                 Text("识别与音频保护").font(.system(size: 15, weight: .semibold))
                                 hint("当前检测状态：\(model.vadStatus)")
-                                hint("Silero 辅助判断人声与停顿，再结合文字句尾判断提交时机。它不负责降噪，也不能保证识别所有轻声。")
-                                hint("4 秒是预览触发间隔，识别繁忙时可能延后，正式片段优先；临时原文不发送给翻译服务。")
-                                hint("保留前后音频缓冲，硬切时保留重叠。检测失败或持续过慢时回退到音量检测，继续收音；未确认的人声候选最迟在安全窗口或停止时处理。")
+                                hint("Silero 检测讲话和停顿，结合句尾确定分段时机。")
+                                hint("临时原文用于预览；整段确认后再翻译，正式片段优先处理。")
+                                hint("连续讲话强切时，下一段附带前面 1.5 秒声音。")
+                                hint("1～10 个词或字组成的内容连续重复 10 次，会复核这一段；未通过时保留音频。")
                             }.padding(22).frame(width: 370)
                         }
                 }
@@ -536,7 +677,7 @@ struct TranslationSettingsView: View {
                         if model.settings.useTranslationContext {
                             Stepper("参考前 \(model.settings.translationContextCount) 段", value: $model.settings.translationContextCount, in: 1...6).frame(maxWidth: 235)
                         }
-                        hint("默认前 4 段原文与已有译文，按收音片段计算。开启后，相关前文也会发送给翻译服务，增加少量输入用量；不会等待前文翻译而阻塞收音。")
+                        hint("将前文的原文与已有译文一并发送给翻译服务，帮助理解指代和术语。")
                     }
                 }
             }
@@ -550,7 +691,7 @@ struct TranslationSettingsView: View {
         switch model.settings.provider {
         case .googleFree:
             SettingsRow(title: "免 Key 试用") {
-                hint("无需填写密钥。此接口没有官方免费服务保证，可能限流或失效。重要的长时间会议建议使用官方接口或自定义模型。")
+                hint("无需密钥，适合体验；长时间会议推荐官方接口或自定义模型。")
             }
         case .googleCloud:
             SettingsRow(title: "API Key") { SecureField("Google Cloud API Key", text: $model.googleKey).textFieldStyle(.roundedBorder) }
@@ -559,7 +700,7 @@ struct TranslationSettingsView: View {
             SettingsRow(title: "Index 翻译") {
                 VStack(alignment: .leading, spacing: 9) {
                     Text("Index-Translate-35B-A3B").font(.system(size: 13, weight: .medium))
-                    hint("B 站官方免费公网接口，无需 API Key。服务可用性以提供方为准。")
+                    hint("B 站提供的免费翻译接口，无需 API Key。")
                 }
             }
         case .custom:
@@ -578,22 +719,23 @@ struct TranslationSettingsView: View {
     }
 
     private var terminologyPanel: some View {
-        SettingsPanel(title: "专业词汇，结合上下文理解", subtitle: "已随软件附带 Wikidata 多语言专业词库，离线检索，无需另行下载。") {
+        SettingsPanel(title: "专业词汇，结合上下文理解", subtitle: "内置多语言专业词库，也支持导入自己的词条。") {
+            SettingsRow(title: "常用领域", detail: "开始收音时默认勾选") {
+                MeetingDomainGrid(domains: model.terminologyDomainIDs, selection: Binding(get: { model.settings.terminologyDomains }, set: model.rememberMeetingDomains))
+                    .disabled(model.languageSelectionLocked)
+            }
+            separator
             SettingsRow(title: "专业术语") {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle("启用本地术语检索", isOn: $model.settings.useTerminology).toggleStyle(.switch)
-                    hint("仅向翻译模型提供少量相关术语，帮助统一译法；不替换识别原文。")
+                    hint("提供相关专业词汇，帮助统一译法。")
                 }
             }
             SettingsRow(title: "会议语境") {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle("参考最近 60 秒的术语语境", isOn: $model.settings.useTerminologyMemory).toggleStyle(.switch).disabled(!model.settings.useTerminology)
-                    hint("帮助区分多义词；新会议、清空记录后不沿用旧语境。无需额外调用 AI。")
+                    hint("结合前文，理解术语和指代。")
                 }
-            }
-            SettingsRow(title: "会议话题", detail: "可选，最多 120 字") {
-                TextField("例如：统计分析、医学研究、软件开发", text: $model.settings.terminologyTopic).textFieldStyle(.roundedBorder)
-                    .onChange(of: model.settings.terminologyTopic) { model.settings.terminologyTopic = String(model.settings.terminologyTopic.prefix(120)) }
             }
             separator
             SettingsRow(title: "本地词库", detail: "用户自定义优先") {
@@ -608,13 +750,12 @@ struct TranslationSettingsView: View {
                         Button("导出词库…") { model.exportTerminology() }
                         Button { model.reloadTerminology() } label: { Label("重新加载", systemImage: "arrow.clockwise") }
                     }.disabled(model.terminologyLoading)
-                    hint("内置 10,018 个 Wikidata 概念与人工校订词，去重后默认 10,041 条。导入的自定义词优先；本机更新包可替代内置快照。各语言覆盖不同，缺少译名时不编造。")
                     if !model.terminologyInfo.isEmpty { hint(model.terminologyInfo) }
                 }
             }
             separator
             SettingsRow(title: "使用范围") {
-                hint("Index 与自定义翻译接口支持术语提示；当前 Google 接口保持原请求。每段只发送相关的少量词条与必要含义，不发送整本词库，提示预算约 300 Token（估算）。")
+                hint("专业词库适用于 Index 和自定义翻译接口。")
             }
         }.controlSize(.large)
     }
@@ -644,7 +785,7 @@ struct TranslationSettingsView: View {
 struct PhoneSettingsView: View {
     @ObservedObject var model: AppModel
     var body: some View {
-        ScrollView {
+        ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 22) {
                 SoftCard(padding: 28) {
                     HStack(alignment: .top, spacing: 28) {
@@ -693,13 +834,13 @@ struct PhoneSettingsView: View {
                             Spacer()
                             Button(model.bluetoothEnabled ? "关闭蓝牙字幕" : "开启蓝牙字幕") { model.toggleBluetooth() }.buttonStyle(.borderedProminent).tint(Palette.accent)
                         }
-                        Text("无需 Wi-Fi。在安卓 App 中点击“蓝牙连接”，首次输入下方配对码，之后在“已配对的电脑”直接连接；支持记住多台设备。首次连接请按系统提示完成蓝牙配对。").font(.system(size: 13)).foregroundStyle(Palette.muted).lineSpacing(5)
+                        Text("在安卓 App 中选择「蓝牙连接」，首次输入配对码；之后可在已配对设备中直接连接，无需 Wi-Fi。").font(.system(size: 13)).foregroundStyle(Palette.muted).lineSpacing(5)
                         if model.bluetoothEnabled {
                             HStack(spacing: 20) {
                                 Text(model.bluetoothCode).font(.system(size: 32, weight: .semibold, design: .monospaced)).tracking(7).textSelection(.enabled)
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(model.bluetoothStatus).font(.system(size: 12))
-                                    Text("已连接 \(model.bluetoothConnections) 台手机 · 已配对设备无需重复输码").font(.system(size: 11)).foregroundStyle(Palette.muted)
+                                    Text("已连接 \(model.bluetoothConnections) 台手机").font(.system(size: 11)).foregroundStyle(Palette.muted)
                                 }
                             }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(Palette.canvas, in: RoundedRectangle(cornerRadius: 12))
                         }
@@ -717,12 +858,9 @@ struct PhoneSettingsView: View {
                 }
                 SoftCard {
                     VStack(alignment: .leading, spacing: 17) {
-                        Toggle("隐藏电脑上的字幕", isOn: $model.hideDesktopCaptions).toggleStyle(.switch)
-                        Text("开启后，电脑主窗口与悬浮窗都不显示字幕，手机仍正常更新。隐藏不会停止收音。").font(.system(size: 12)).foregroundStyle(Palette.muted)
-                        Divider()
                         Label("安卓 App 也可以粘贴配对链接连接", systemImage: "apps.iphone").font(.system(size: 13, weight: .medium))
-                        Text("同一 Wi-Fi 无法互通时，可试试手机热点。若出现系统防火墙提示，请允许听桥接收本地连接。也可改用上方的蓝牙字幕，无需共同网络。").font(.system(size: 12)).foregroundStyle(Palette.muted).lineSpacing(6)
-                        Text("字幕通过局域网 HTTP 发送，配对链接相当于访问凭证，请仅在可信网络使用。关闭再开启连接会更换配对码。").font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(5)
+                        Text("连接遇到问题时，可尝试手机热点或蓝牙；系统询问本地网络访问时，请允许连接。").font(.system(size: 12)).foregroundStyle(Palette.muted).lineSpacing(6)
+                        Text("请在可信 Wi-Fi 下使用，配对链接仅分享给自己的设备。").font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(5)
                     }
                 }
                 if !model.notice.isEmpty { NoticeBar(text: model.notice) { model.notice = "" } }
@@ -775,7 +913,7 @@ struct HistoryView: View {
                     if model.visibleJobs.isEmpty { Text("还没有会议记录，开始一场会议后会自动保存。").foregroundStyle(Palette.muted).padding(80) }
                 }
             }
-            Text("界面显示最近 300 段，导出包含全部未清除的原文和译文。清除后可撤销，也可在菜单中永久删除。").font(.system(size: 10)).foregroundStyle(Palette.muted)
+            Text("显示最近 300 段；导出包含全部未清除的记录。").font(.system(size: 10)).foregroundStyle(Palette.muted)
         }.padding(28)
     }
 }

@@ -68,7 +68,7 @@ private final class FakeVAD: VoiceActivityDetecting {
         uncertain.flush()
         check(uncertainWindows.count == 2, "uncertain audio uses bounded safety submission, never disappears")
         let uncertainPCM = try uncertainWindows.flatMap { try read($0.url) }
-        check(uncertainPCM.count == 12 * 16000 + 8000, "safety cut preserves all samples plus explicit overlap")
+        check(uncertainPCM.count == 12 * 16000 + 24000, "safety cut preserves all samples plus explicit overlap")
         check(uncertainWindows[1].overlap, "uncertain hard cut advertises overlap")
 
         for invalid in [false, true] {
@@ -111,7 +111,7 @@ private final class FakeVAD: VoiceActivityDetecting {
         continuous.flush()
         check(bounded.count >= 120 && bounded.allSatisfy { $0.duration <= 10.04 }, "20 minutes of accelerated VAD input has a bounded maximum window")
         let retained = try bounded.map { try read($0.url).count }.reduce(0, +)
-        check(retained == 1200 * 16000 + bounded.filter(\.overlap).count * 8000, "20-minute continuous path conserves PCM including declared overlap")
+        check(retained == 1200 * 16000 + bounded.map(\.contextSampleCount).reduce(0, +), "20-minute continuous path conserves PCM including declared overlap")
 
         let project = URL(fileURLWithPath: CommandLine.arguments[1])
         let appPath = ProcessInfo.processInfo.environment["TINGQIAO_VAD_APP"].map { URL(fileURLWithPath: $0) }

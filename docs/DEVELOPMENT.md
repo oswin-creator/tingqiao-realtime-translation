@@ -21,7 +21,8 @@
 - Swift, AppKit, SwiftUI, AVFoundation, ScreenCaptureKit, Speech, CoreBluetooth.
 - macOS 26 SDK or newer for compilation, macOS 14+ deployment on arm64.
 - whisper.cpp v1.8.2, pinned to 4979e04f5dcaccb36057e059bbaed8a2f5288315.
-- Whisper large-v3-turbo weights are installed separately. Expected SHA-256 is 1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69.
+- Model artifacts and checksums are pinned in Sources/LocalModels.swift. KomixV2 byte vocabulary is generated with Tools/Whisper/generate-vocabulary.py.
+- transcribe.cpp for Qwen, pinned to 5700f127e38dd53c4735ea23ef743b4b538eacd4.
 - Android Platform 35, Build Tools 36.0.0, minimum API 26, JDK 17.
 - ZXing Core 3.5.3, downloaded from Maven Central with a pinned SHA-256.
 
@@ -29,9 +30,9 @@ Third-party license texts live in docs/licenses and application resources. Build
 
 ## Recognition timing
 
-The segmenter maintains the current uncommitted audio. A clearly completed sentence may submit after about 0.7 seconds of silence, an unclear ending after about 1.5 seconds. Around 7 seconds it prefers a natural pause, with a 10-second cap. Forced cuts preserve about 0.5 seconds of overlap.
+The segmenter maintains the current uncommitted audio. A clearly completed sentence may submit after about 0.7 seconds of silence, an unclear ending after about 1.5 seconds. Around 7 seconds it prefers a natural pause, with a 10-second cap. Forced cuts preserve about 1.5 seconds of overlap.
 
-Whisper previews attempt an update every 4 seconds, independent of low-power mode. Busy recognition prioritizes final segments. Confirmed text is checked for repetition before replacing a usable preview. Recognition errors have a bounded automatic retry, with blocked audio retained for manual retry.
+Whisper previews attempt an update every 4 seconds, independent of low-power mode. Busy recognition prioritizes final segments. Confirmed text is checked for repetition before replacing a usable preview. Recognition errors have a bounded automatic retry, with blocked audio retained for manual retry. Phrases of 1–10 characters or words repeated consecutively 10 times are reviewed before publication.
 
 These rules reduce latency and error propagation, with limits in noisy, overlapping, or low-volume speech.
 

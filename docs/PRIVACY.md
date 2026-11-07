@@ -4,13 +4,13 @@
 
 | Operation | Data processed | Destination |
 | --- | --- | --- |
-| Whisper recognition | Audio segments | Local Mac, via the whisper.cpp helper |
+| Whisper / Qwen recognition | Audio segments | Local Mac, via the selected resident helper |
 | Apple local recognition | Audio segments | Apple speech APIs on the Mac |
 | Apple online recognition | Audio segments | Apple, when local-only recognition is switched off |
 | Translation | Confirmed text and optional preceding context | Selected Google, Index, or custom endpoint |
-| Meeting assistant | Up to 15 recent confirmed segments and available translations | Separately configured assistant endpoint, on request |
+| Meeting assistant | The latest 15 confirmed segments, available translations, and up to five minutes of preceding background | Separately configured assistant endpoint, on request |
 | Wi-Fi / BLE captions | Recent captions, status, requested assistant replies | Paired phones |
-| Model installation | Model download | Hugging Face for Whisper, Apple for system resources |
+| Model installation | Model download | Hugging Face for local models, Apple for system resources |
 
 The app stores transcript metadata and pending audio in ~/Library/Application Support/TingQiao/. Segments are saved before recognition. Audio is removed after recognition succeeds and text is saved. Unfinished segments remain for recovery. Clearing history supports undo until permanently deleted.
 

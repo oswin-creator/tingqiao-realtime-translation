@@ -15,7 +15,10 @@ final class SpeechRecognition {
     }
 
     func authorize(language: String, localOnly: Bool, engine: RecognitionEngine = .apple) async throws {
-        if engine == .whisperTurbo { try await WhisperEngine.shared.prepare(); return }
+        if engine.isLocalModel {
+            guard engine.supports(language) else { throw BridgeError("Whisper Medium KomixV2 用于韩语识别，请选择韩语或其他识别引擎。", retryable: false) }
+            try await WhisperEngine.shared.prepare(engine: engine); return
+        }
         if try await usesModernSpeech(language: language, localOnly: localOnly) { return }
         let status = await withCheckedContinuation { continuation in SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) } }
         guard status == .authorized else { throw BridgeError("请在系统设置 → 隐私与安全性 → 语音识别中允许“听桥”。", retryable: false) }
@@ -35,8 +38,23 @@ final class SpeechRecognition {
         return true
     }
 
+    func recognizeResult(url: URL, language: String, localOnly: Bool, engine: RecognitionEngine = .apple,
+                         retry: Bool = false, skipSamples: Int = 0, withTimestamps: Bool = false) async throws -> RecognitionResult {
+        if engine.isLocalModel {
+            guard engine.supports(language) else { throw BridgeError("Whisper Medium KomixV2 用于韩语识别，请选择韩语或其他识别引擎。", retryable: false) }
+            return try await WhisperEngine.shared.recognizeResult(url: url, language: language, retry: retry, engine: engine,
+                skipSamples: skipSamples, withTimestamps: withTimestamps)
+        }
+        let input = try await Task.detached { try RecognitionAudio.croppedInput(url, skipping: skipSamples) }.value
+        defer { if input != url { try? FileManager.default.removeItem(at: input) } }
+        return RecognitionResult(text: try await recognize(url: input, language: language, localOnly: localOnly, engine: engine, retry: retry))
+    }
+
     func recognize(url: URL, language: String, localOnly: Bool, engine: RecognitionEngine = .apple, retry: Bool = false) async throws -> String {
-        if engine == .whisperTurbo { return try await WhisperEngine.shared.recognize(url: url, language: language, retry: retry) }
+        if engine.isLocalModel {
+            guard engine.supports(language) else { throw BridgeError("Whisper Medium KomixV2 用于韩语识别，请选择韩语或其他识别引擎。", retryable: false) }
+            return try await WhisperEngine.shared.recognize(url: url, language: language, retry: retry, engine: engine)
+        }
         if #available(macOS 26.0, *), try await usesModernSpeech(language: language, localOnly: localOnly) {
             return try await ModernSpeech.recognize(url: url, language: language)
         }

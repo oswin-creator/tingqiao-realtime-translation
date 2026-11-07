@@ -115,6 +115,21 @@ final class TerminologyMock: URLProtocol {
         check(crowded.terms.count <= 8 && crowded.estimatedTokens <= 300, "ranking respects term and estimated-token caps")
         check((crowded.encoded + TerminologyHint.instructions + "\"terminology\":").utf8.count <= 900, "serialized hint has hard byte cap")
         check(crowded.termIDs == hint("Kruskal-Wallis test, Mann-Whitney U test, Wilcoxon test, repeated measures, analysis of variance, confidence interval, sample size, statistical significance, power, significant.")!.termIDs, "deterministic ranking")
+        let statIDs: Set<String> = ["difference-in-differences", "parallel-trends", "staggered-did", "two-way-fixed-effects", "group-time-att", "cluster-robust-standard-errors", "standard-error", "standard-deviation", "no-anticipation"]
+        for entry in library.entries where statIDs.contains(entry.id) {
+            for source in ["en", "ko"] {
+                let found = index.retrieve(text: entry.forms[source]!.preferred, source: source, target: "zh-CN", now: now, selectedDomains: ["statistics"])
+                check(has(entry.id, found), "curated statistical concept: \(entry.id), \(source)")
+                check(found?.terms[found!.termIDs.firstIndex(of: entry.id)!][1] == entry.forms["zh-CN"]!.preferred, "curated statistical translation: \(entry.id), \(source)")
+            }
+        }
+        let did = index.retrieve(text: "Use DID with clustered standard errors.", source: "en", target: "zh-CN", now: now, selectedDomains: ["statistics"])
+        check(has("difference-in-differences", did) && has("cluster-robust-standard-errors", did), "DID and clustered errors retrieve together")
+        check(!has("difference-in-differences", index.retrieve(text: "Why did you call?", source: "en", target: "zh-CN", now: now, selectedDomains: ["statistics"])), "ordinary did is not the DID method")
+        check(has("difference-in-differences", index.retrieve(text: "Use DiD.", source: "en", target: "zh-CN", now: now, selectedDomains: ["statistics"])), "mixed-case DiD acronym is retrieved literally")
+        check(!has("difference-in-differences", index.retrieve(text: "DID", source: "en", target: "zh-CN", now: now, selectedDomains: ["medicine"])), "DID respects manual domain selection")
+        check(has("difference-in-differences", index.retrieve(text: "DID는 평행추세 가정을 사용합니다.", source: "ko", target: "zh-CN", now: now, selectedDomains: ["statistics"])), "Korean DID with a grammatical particle is retrieved")
+        check(!has("difference-in-differences", index.retrieve(text: "DID회사입니다.", source: "ko", target: "zh-CN", now: now, selectedDomains: ["statistics"])), "acronym inside an unrelated compound is not retrieved")
         print("Offline positive retrieval: \(positives.count)/\(positives.count); crowded prompt: \(crowded.terms.count) terms, estimated \(crowded.estimatedTokens) tokens")
 
         try await providerTests(index: index)
@@ -182,10 +197,11 @@ final class TerminologyMock: URLProtocol {
         }
         var legacy: [String: Any] = ["model": "preserve", "provider": TranslationProvider.custom.rawValue, "useTranslationContext": false]
         var migrated = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: legacy))
-        check(migrated.useTerminology && migrated.useTerminologyMemory && migrated.terminologyTopic.isEmpty && !migrated.useTranslationContext && migrated.model == "preserve", "settings migration preserves existing context and provider")
+        check(migrated.useTerminology && migrated.useTerminologyMemory && !migrated.useTranslationContext && migrated.model == "preserve", "settings migration preserves existing context and provider")
         legacy["useTerminology"] = false; legacy["useTerminologyMemory"] = false; legacy["terminologyTopic"] = String(repeating: "话", count: 200)
         migrated = try JSONDecoder().decode(AppSettings.self, from: JSONSerialization.data(withJSONObject: legacy))
-        check(!migrated.useTerminology && !migrated.useTerminologyMemory && migrated.terminologyTopic.count == 120, "settings switches and topic bounds")
+        let encodedSettings = try JSONSerialization.jsonObject(with: JSONEncoder().encode(migrated)) as! [String: Any]
+        check(!migrated.useTerminology && !migrated.useTerminologyMemory && encodedSettings["terminologyTopic"] == nil, "settings retain switches and omit the removed topic")
     }
 
     static func storageTests(library: TermLibrary, url: URL) async throws {
@@ -275,6 +291,21 @@ final class TerminologyMock: URLProtocol {
             times.append(ProcessInfo.processInfo.systemUptime - start)
             check(result != nil && result!.estimatedTokens <= 300 && result!.activeCount <= 40, "20k indexed lookup stays bounded")
         }
+        let legacySettings = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+        check(legacySettings.terminologyDomains.isEmpty, "legacy preferences require explicit domain selection")
+        var preferences = legacySettings; preferences.terminologyDomains = ["statistics", "medicine"]
+        var captured = AudioJob(id: UUID(), sessionID: UUID(), created: now, audioFile: "unused", language: "ko-KR", localRecognition: true)
+        captured.terminologyDomains = preferences.terminologyDomains
+        preferences.terminologyDomains = ["law"]
+        let journal = try JSONDecoder().decode(AudioJob.self, from: JSONEncoder().encode(captured))
+        check(journal.terminologyDomains == ["statistics", "medicine"], "captured domain snapshot survives settings changes and restart")
+        check(MeetingDomain.summary(["custom-domain"]) == "custom-domain", "imported custom domains remain visible")
+        let statOnly = index.retrieve(text: "The power is too low.", source: "en", target: "zh-CN", topic: "statistics", now: now, selectedDomains: ["statistics"])
+        check(statOnly != nil, "manual selected domain supplies fixed scope without per-sentence routing")
+        check(index.retrieve(text: "analysis of variance", source: "en", target: "zh-CN", now: now, selectedDomains: ["medicine"]) == nil, "unselected domain cannot leak through exact match")
+        check(index.retrieve(text: "analysis of variance", source: "en", target: "zh-CN", now: now, selectedDomains: []) == nil, "no selected domains means ordinary translation")
+        let mixed = index.retrieve(text: "analysis of variance", source: "en", target: "zh-CN", now: now, selectedDomains: ["statistics", "medicine"])
+        check(mixed != nil, "multiple manual domains remain available")
         let sorted = times.sorted(), p95 = sorted[94]
         check(p95 < 0.25, "20k lookup does not approach a network round trip")
         print(String(format: "20k library: build %.3f s; retrieval with 40 turns mean %.2f ms, p95 %.2f ms", build, times.reduce(0,+)/Double(times.count)*1000, p95*1000))

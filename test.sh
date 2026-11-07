@@ -27,3 +27,12 @@ xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_
 "$project_dir/build/tests/AssistantTests"
 zsh "$project_dir/test-terminology.sh"
 zsh "$project_dir/test-wikidata.sh"
+
+xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_dir/build/module-cache" "$project_dir/Sources/Models.swift" "$project_dir/Sources/LocalModels.swift" "$project_dir/Sources/WhisperEngine.swift" "$project_dir/Tests/LocalModelTests.swift" -o "$project_dir/build/tests/LocalModelTests"
+"$project_dir/build/tests/LocalModelTests"
+
+xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_dir/build/module-cache" "${sources[@]}" "$project_dir/Tests/RecognitionReviewTests.swift" -o "$project_dir/build/tests/RecognitionReviewTests"
+"$project_dir/build/tests/RecognitionReviewTests"
+
+xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_dir/build/module-cache" "$project_dir/Sources/Models.swift" "$project_dir/Sources/LocalModels.swift" "$project_dir/Sources/WhisperEngine.swift" "$project_dir/Tests/KomixVocabularyTests.swift" -o "$project_dir/build/tests/KomixVocabularyTests"
+(cd "$project_dir" && build/tests/KomixVocabularyTests)

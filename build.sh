@@ -11,10 +11,15 @@ cp "$project_dir/Resources/phone.html" "$app_dir/Contents/Resources/phone.html"
 cp "$project_dir/Resources/terminology.json" "$app_dir/Contents/Resources/terminology.json"
 cp "$project_dir/Resources/wikidata.json" "$project_dir/Resources/wikidata.manifest.json" "$app_dir/Contents/Resources/"
 if [[ -f "$project_dir/Resources/AppIcon.icns" ]]; then cp "$project_dir/Resources/AppIcon.icns" "$app_dir/Contents/Resources/AppIcon.icns"; fi
-xcrun swiftc -swift-version 5 -O -parse-as-library -target arm64-apple-macosx14.0 -module-cache-path "$module_cache" -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker "$project_dir/Resources/Info.plist" "$project_dir"/Sources/*.swift -o "$app_dir/Contents/MacOS/TingQiao"
+xcrun swiftc -file-prefix-map "$project_dir=." -swift-version 5 -O -parse-as-library -target arm64-apple-macosx14.0 -module-cache-path "$module_cache" -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker "$project_dir/Resources/Info.plist" "$project_dir"/Sources/*.swift -o "$app_dir/Contents/MacOS/TingQiao"
 helper="$project_dir/build/whisper-engine/TingQiaoWhisper"
 if [[ ! -x "$helper" ]]; then print -u2 "先运行 ./build-whisper.sh 构建本机识别引擎"; exit 1; fi
 cp "$helper" "$app_dir/Contents/MacOS/TingQiaoWhisper"
+qwen_helper="$project_dir/build/qwen-engine/TingQiaoQwen"
+if [[ ! -x "$qwen_helper" ]]; then print -u2 "先运行 ./build-qwen.sh 构建 Qwen 识别引擎"; exit 1; fi
+cp "$qwen_helper" "$app_dir/Contents/MacOS/TingQiaoQwen"
+[[ "$(shasum -a 256 "$project_dir/Resources/whisper-medium-vocab.bin" | cut -d ' ' -f 1)" == "49639ac8580c3985225c05981ed17f85c8d193ebeaaab3bde2a0cddc38d2eb56" ]] || { print -u2 "KomixV2 编码表校验失败"; exit 1; }
+cp "$project_dir/Resources/whisper-medium-vocab.bin" "$app_dir/Contents/Resources/"
 vad_library="$project_dir/build/whisper-engine/libTingQiaoVAD.dylib"
 if [[ ! -f "$vad_library" ]]; then print -u2 "先运行 ./build-whisper.sh 构建 Silero 检测引擎"; exit 1; fi
 cp "$vad_library" "$app_dir/Contents/MacOS/libTingQiaoVAD.dylib"
@@ -26,6 +31,7 @@ cp "$project_dir"/docs/licenses/* "$app_dir/Contents/Resources/Licenses/"
 cp "$project_dir/Resources/THIRD-PARTY-NOTICES.txt" "$app_dir/Contents/Resources/THIRD-PARTY-NOTICES.txt"
 sign_identity="${TINGQIAO_SIGN_IDENTITY:--}"
 codesign --force --sign "$sign_identity" "$app_dir/Contents/MacOS/TingQiaoWhisper"
+codesign --force --sign "$sign_identity" "$app_dir/Contents/MacOS/TingQiaoQwen"
 codesign --force --sign "$sign_identity" "$app_dir/Contents/MacOS/libTingQiaoVAD.dylib"
 codesign --force --deep --sign "$sign_identity" --identifier cn.tingqiao.bridge "$app_dir"
 codesign --verify --deep --strict "$app_dir"

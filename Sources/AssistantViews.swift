@@ -1,7 +1,19 @@
 import SwiftUI
 
+private struct CaptionSurfaceOpacityKey: EnvironmentKey {
+    static let defaultValue = 1.0
+}
+
+extension EnvironmentValues {
+    var captionSurfaceOpacity: Double {
+        get { self[CaptionSurfaceOpacityKey.self] }
+        set { self[CaptionSurfaceOpacityKey.self] = newValue }
+    }
+}
+
 struct AssistantButtons: View {
     @ObservedObject var model: AppModel
+    @Environment(\.captionSurfaceOpacity) private var surfaceOpacity
     var compact = false
 
     var body: some View {
@@ -14,8 +26,9 @@ struct AssistantButtons: View {
                         .padding(.horizontal, compact ? 8 : 9)
                         .padding(.vertical, compact ? 5 : 7)
                         .foregroundStyle(Palette.accent)
-                        .background(Palette.accent.opacity(action == .answer ? 0.12 : 0.06), in: RoundedRectangle(cornerRadius: 8))
+                        .background(Palette.accent.opacity((action == .answer ? 0.12 : 0.06) * surfaceOpacity), in: RoundedRectangle(cornerRadius: 8))
                 }.buttonStyle(.plain).disabled(model.assistantBusy)
+                    .help(action == .answer ? "参考最近五分钟，逐个回答最近十五段里的问题" : "参考最近五分钟，解释最近十五段在讨论什么")
             }
         }
     }
@@ -43,6 +56,7 @@ private final class AssistantCardState: ObservableObject {
 }
 
 private struct AssistantReplyCard: View {
+    @Environment(\.captionSurfaceOpacity) private var surfaceOpacity
     @StateObject private var cardState = AssistantCardState()
     var reply: AssistantReply
     var compact = false
@@ -79,8 +93,8 @@ private struct AssistantReplyCard: View {
             }
         }
         .padding(compact ? 9 : 13)
-        .background(.white, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Palette.accent.opacity(0.18)))
+        .background(.white.opacity(surfaceOpacity), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Palette.accent.opacity(0.18 * surfaceOpacity)))
     }
 
     private var replyText: some View {
@@ -107,11 +121,11 @@ struct AssistantSettingsView: View {
     @StateObject private var form = AssistantSettingsForm()
 
     var body: some View {
-        ScrollView {
+        ScrollView(showsIndicators: false) {
             SoftCard {
                 VStack(alignment: .leading, spacing: 16) {
                     Label("会议助手接口", systemImage: "bubble.left.and.bubble.right").font(.system(size: 17, weight: .semibold))
-                    Text("点「帮我回答」或「解释刚才」时，才向此接口发送当前会议最近 15 段正式字幕。手机共用这份设置。")
+                    Text("点击按钮时，助手参考最近五分钟的对话，回答或解释最近十五段内容。电脑和手机共用此接口。")
                         .font(.system(size: 12)).foregroundStyle(Palette.muted)
                     Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 12) {
                         GridRow {
@@ -147,14 +161,14 @@ struct AssistantSettingsView: View {
                             }.labelsHidden().accessibilityLabel("思考强度")
                         }
                         GridRow {
-                            Text("最多回复")
+                            Text("回复句数")
                             Picker("最多回复", selection: $form.draft.sentences) {
                                 ForEach(1...3, id: \.self) { Text("\($0) 句").tag($0) }
-                            }.labelsHidden().pickerStyle(.segmented).frame(maxWidth: 240).accessibilityLabel("最多回复几句")
+                            }.labelsHidden().pickerStyle(.segmented).frame(maxWidth: 240).accessibilityLabel("回复句数，回答按每题，解释按整段")
                         }
                     }.textFieldStyle(.roundedBorder)
-                    Toggle("使用新版回复长度参数", isOn: $form.draft.modernTokenLimit)
-                    Text("回复句数只限制正式回答。支持返回思考内容的接口会在回答上方显示折叠区。思考强度需模型支持，遇到参数错误可选「接口默认」。")
+                    Toggle("使用 max_completion_tokens 参数", isOn: $form.draft.modernTokenLimit)
+                    Text("「帮我回答」用提问语言作答，并附目标语言译文，两部分各按所选句数回复。「解释刚才」整段按所选句数回复。思考内容单独折叠。")
                         .font(.system(size: 11)).foregroundStyle(Palette.muted)
                     HStack {
                         Button("保存问答设置", action: save).buttonStyle(.borderedProminent).tint(Palette.accent).disabled(form.saving)

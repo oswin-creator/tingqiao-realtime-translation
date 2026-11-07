@@ -22,7 +22,6 @@ final class AppModel: ObservableObject {
     @Published var bluetoothCode = ""
     @Published var bluetoothConnections = 0
     @Published var pairedPhones: [BluetoothPeer] = []
-    @Published var hideDesktopCaptions = false
     @Published var floatingVisible = false
     @Published var startedAt: Date?
     @Published var checkingAPI = false
@@ -41,7 +40,19 @@ final class AppModel: ObservableObject {
     @Published var installingAppleLanguage = false
     @Published var whisperInstalled = WhisperEngine.installed
     @Published var downloadingWhisper = false
+    @Published var installedLocalModels = Set(LocalModel.all.filter { LocalModelFiles.installed($0) }.map(\.engine))
+    @Published var downloadingModel: RecognitionEngine?
+    @Published var modelDownloadedBytes: Int64 = 0
+    @Published var modelDownloadProgress: Double?
+    @Published var modelDownloadCanCancel = false
+    @Published var modelInstallPrompt: LocalModel?
+    @Published var modelRemovalPrompt: LocalModel?
+    var modelDownloadSession: URLSession?
     @Published var draftText = ""
+    @Published var terminologyDomainIDs = MeetingDomain.allCases.map(\.rawValue)
+    @Published var terminologySetupRequested = false
+    @Published var choosingMeetingDomains = false
+    @Published var meetingDomainSelection: [String] = []
     @Published var assistantSettings = AssistantSettings.load()
     let assistantPresentation = AssistantPresentation()
     var assistantReply: AssistantReply? {
@@ -104,7 +115,8 @@ final class AppModel: ObservableObject {
     var blockedCount: Int { jobs.filter { $0.deletedAt == nil && $0.stage == .blocked }.count }
     var currentCaptureEpoch: UUID { captureEpoch }
     var currentPipelineGeneration: Int { pipelineGeneration }
-    var languageSelectionLocked: Bool { isRunning || isStarting || isStopping || installingAppleLanguage }
+    var languageSelectionLocked: Bool { isRunning || isStarting || isStopping || installingAppleLanguage || downloadingWhisper }
+    var modelManagementLocked: Bool { languageSelectionLocked || recognitionActive || previewActive || choosingMeetingDomains || isRecoveringPipeline }
 
     func offerWalkthrough() {
         guard backgroundWorkEnabled, walkthroughStep == nil, !isRunning, !isStarting,
@@ -141,7 +153,7 @@ final class AppModel: ObservableObject {
             let preview = job.previewText ?? ""
             let cleanPreview = RepeatedText.containsRun(preview) ? "" : preview
             let status: String? = job.stage == .blocked ? "这一段识别失败 · 音频已保留"
-                : job.recognitionFailures > 0 ? "正在重新识别…" : nil
+                : job.recognitionFailures > 0 ? (job.recognitionSuspected == true ? "正在复核识别…" : "正在重新识别…") : nil
             guard !cleanPreview.isEmpty || status != nil else { return nil }
             return Caption(isDraft: true, id: job.id, date: job.created, original: cleanPreview, translated: "", recognitionStatus: status)
         }
@@ -255,6 +267,26 @@ final class AppModel: ObservableObject {
     }
 
     func start() {
+        guard !languageSelectionLocked, !choosingMeetingDomains else { return }
+        meetingDomainSelection = settings.terminologyDomains
+        choosingMeetingDomains = true
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        NSApplication.shared.windows.first { $0.title == "听桥" }?.makeKeyAndOrderFront(nil)
+    }
+
+    func confirmMeetingDomains() {
+        guard choosingMeetingDomains, !languageSelectionLocked else { return }
+        rememberMeetingDomains(meetingDomainSelection)
+        choosingMeetingDomains = false
+        beginCapture()
+    }
+
+    func rememberMeetingDomains(_ domains: [String]) {
+        settings.terminologyDomains = Array(Set(domains)).sorted()
+        if backgroundWorkEnabled { settings.save() }
+    }
+
+    private func beginCapture() {
         guard !CommandLine.arguments.contains("--connection-check") else { notice = "连接检查模式仅显示测试字幕，不开启收音。请正常重开听桥后使用会议翻译。"; return }
         guard !languageSelectionLocked, storageHealthy, let store else { return }
         let needsTranslation = settings.language != settings.targetLanguage.rawValue
@@ -380,20 +412,16 @@ final class AppModel: ObservableObject {
             recognitionTask = Task {
                 defer { recognitionActive = false; recognitionJobID = nil; recognitionTask = nil; pump() }
                 do {
-                    var text = try await speech.recognize(
+                    let retry = job.recognitionFailures > 0
+                    let result = try await speech.recognizeResult(
                         url: store.audio.appendingPathComponent(job.audioFile), language: job.language,
-                        localOnly: job.localRecognition, engine: job.recognitionEngine ?? .apple,
-                        retry: job.recognitionFailures > 0
-                    ).trimmingCharacters(in: .whitespacesAndNewlines)
+                        localOnly: job.localRecognition, engine: job.recognitionEngine ?? .apple, retry: retry,
+                        skipSamples: retry ? job.effectiveContextSampleCount : 0,
+                        withTimestamps: job.overlap && !retry
+                    )
                     guard !Task.isCancelled, generation == pipelineGeneration else { return }
-                    if RepeatedText.containsRun(text) {
-                        failed(job.id, error: BridgeError("识别原文出现异常重复。")); return
-                    }
-                    if job.overlap, let previous = jobs.last(where: { $0.deletedAt == nil && $0.sessionID == job.sessionID && $0.created < job.created && !$0.original.isEmpty }) {
-                        text = CaptionText.removingOverlap(previous: previous.original, current: text)
-                    }
                     lastRecognitionAt = Date()
-                    _ = commitRecognition(text, for: job.id, generation: generation)
+                    _ = commitRecognition(result, for: job.id, generation: generation)
                 } catch { if generation == pipelineGeneration { failed(job.id, error: error) } }
             }
         }
@@ -415,11 +443,12 @@ final class AppModel: ObservableObject {
             let supportsHints = settings.provider == .custom || settings.provider == .indexTranslate
             let useHints = settings.useTerminology && supportsHints && (job.translationRepetitionRetries ?? 0) == 0
             let recentTerms = useHints && settings.useTerminologyMemory ? TerminologyService.recent(before: job, in: jobs) : []
-            let topic = settings.terminologyTopic, memory = settings.useTerminologyMemory
+            let memory = settings.useTerminologyMemory
+            let selectedDomains = Set(job.terminologyDomains ?? settings.terminologyDomains)
             translationTasks[job.id] = Task {
                 defer { translationsActive.remove(job.id); translationTasks.removeValue(forKey: job.id); pump() }
                 do {
-                    let hint = useHints ? await terminologyService?.hint(text: job.original, source: MeetingLanguage(rawValue: job.language)?.translationCode ?? job.language, target: job.resolvedTargetLanguage.translationCode, recent: recentTerms, topic: topic, now: job.created, memory: memory) : nil
+                    let hint = useHints ? await terminologyService?.hint(text: job.original, source: MeetingLanguage(rawValue: job.language)?.translationCode ?? job.language, target: job.resolvedTargetLanguage.translationCode, recent: recentTerms, topic: "", now: job.created, memory: memory, selectedDomains: selectedDomains) : nil
                     guard !Task.isCancelled, generation == pipelineGeneration else { return }
                     let translation = try await client.translate(job.original, language: job.language, targetLanguage: job.resolvedTargetLanguage, context: context, terminology: hint)
                     guard !Task.isCancelled, generation == pipelineGeneration else { return }
@@ -437,7 +466,7 @@ final class AppModel: ObservableObject {
             let canRetry = jobs[index].attempts == 1 && (error as? BridgeError)?.retryable != false
             if canRetry {
                 jobs[index].retryAfter = Date().addingTimeInterval(1)
-                jobs[index].error = "正在重新识别这段音频。\(error.localizedDescription)"
+                jobs[index].error = jobs[index].recognitionSuspected == true ? "识别内容疑似重复，正在复核这一段。" : "正在重新识别这段音频。\(error.localizedDescription)"
             } else {
                 jobs[index].stage = .blocked
                 jobs[index].error = "这一段识别失败，音频已保留。\(error.localizedDescription)"
@@ -515,9 +544,11 @@ final class AppModel: ObservableObject {
         guard !terminating, !assistantBusy else { reply(.error, "已有一条问答在处理，请稍后再试。"); return }
         let configuration = assistantSettings
         guard configuration.configured else { reply(.error, "请先在 Mac 的「问答大模型设置」填写并保存接口。"); return }
-        let context = AssistantContext.recent(from: jobs, session: isRunning ? sessionID : nil)
+        let snapshot = AssistantContext.snapshot(from: jobs, session: isRunning ? sessionID : nil, at: Date())
+        let context = snapshot.target
         guard !context.isEmpty else { reply(.error, "等有正式字幕后，再使用会议助手。"); return }
         let language = captureSettings?.language ?? jobs.last(where: { $0.deletedAt == nil })?.language ?? settings.language
+        let targetLanguage = settings.targetLanguage
         assistantBusy = true
         reply(.waiting, "正在整理最近的对话…")
         assistantTask = Task {
@@ -526,7 +557,7 @@ final class AppModel: ObservableObject {
                 let account = try configuration.keyAccountForEndpoint()
                 let key = try await Task.detached { try SecretStore.read(account) }.value
                 try Task.checkCancellation()
-                let output = try await MeetingAssistantClient(settings: configuration, key: key).respond(to: request.action, context: context, language: language) { progress in
+                let output = try await MeetingAssistantClient(settings: configuration, key: key).respond(to: request.action, context: context, language: language, targetLanguage: targetLanguage, background: snapshot.background) { progress in
                     guard !Task.isCancelled, progress != reasoning else { return }
                     reasoning = progress
                     reply(.waiting, "正在等待正式回答…")
@@ -558,8 +589,10 @@ final class AppModel: ObservableObject {
     }
     func checkRecognitionSupport() {
         guard settings.recognitionEngine == .apple else {
-            whisperInstalled = WhisperEngine.installed
-            recognitionInfo = whisperInstalled ? "所有语言共用已安装的 Whisper 模型。" : "尚未安装 Whisper 模型，请下载或导入。"
+            refreshLocalModels()
+            let engine = settings.recognitionEngine
+            if !engine.supports(settings.language) { recognitionInfo = "此模型针对韩语训练，请选择韩语作为原文语言。" }
+            else { recognitionInfo = installedLocalModels.contains(engine) ? "\(engine.rawValue) 已安装。" : "请先下载或导入 \(engine.rawValue)。" }
             return
         }
         let language = settings.language
@@ -570,7 +603,7 @@ final class AppModel: ObservableObject {
                 info = status == .installed ? "Apple 本机\(name)资源已安装。" : "Apple 本机\(name)资源尚未就绪，可手动下载。"
             } else {
                 let local = SFSpeechRecognizer(locale: Locale(identifier: language))?.supportsOnDeviceRecognition == true
-                info = local ? "Apple 旧版识别报告支持本机\(name)。" : "这台 Mac 未报告支持 Apple 本机\(name)，可使用 Whisper。"
+                info = local ? "这台 Mac 支持 Apple 本机\(name)识别。" : "这台 Mac 暂不支持 Apple 本机\(name)识别，可使用 Whisper。"
             }
             guard settings.language == language, settings.recognitionEngine == .apple, !installingAppleLanguage else { return }
             recognitionInfo = info
@@ -603,7 +636,7 @@ final class AppModel: ObservableObject {
                 if try await ModernSpeech.installLanguage(language) {
                     recognitionInfo = "Apple 本机\(name)资源已安装。"
                 } else {
-                    recognitionInfo = "Apple 新版本机引擎未能准备\(name)。请检查本机语言支持。"
+                    recognitionInfo = "暂时无法准备\(name)本机识别资源，请检查语言支持。"
                 }
             } catch {
                 recognitionInfo = "Apple 本机\(name)资源准备失败：\(error.localizedDescription)"
@@ -625,6 +658,7 @@ final class AppModel: ObservableObject {
         let result = await terminologyService.load()
         terminologyCount = result.0; terminologyInfo = result.1
         terminologySourceInfo = await terminologyService.sourceSummary
+        terminologyDomainIDs = await terminologyService.availableDomains()
         if settings.useTerminology { await terminologyService.prepare(source: MeetingLanguage(rawValue: settings.language)?.translationCode ?? settings.language) }
     }
     func reloadTerminology() {
@@ -720,7 +754,7 @@ final class AppModel: ObservableObject {
             if finalizedWindows.count > 256 { finalizedWindows = [window.id] }
             let preview = draftCaption?.id == window.id ? draftCaption?.original : nil
             // Journal the same row before retiring the draft, so there is no gap.
-            acceptCapturedAudio(url: window.url, date: window.date, overlap: window.overlap, epoch: epoch, settings: settings, id: window.id, preview: preview)
+            acceptCapturedAudio(url: window.url, date: window.date, overlap: window.overlap, epoch: epoch, settings: settings, id: window.id, preview: preview, window: window)
             if draftWindowID == window.id { draftCaption = nil; draftText = "" }
             return
         }
@@ -741,40 +775,82 @@ final class AppModel: ObservableObject {
                 pump()
             }
             do {
-                let text = try await speech.recognize(url: window.url, language: settings.language, localOnly: settings.localRecognition, engine: settings.recognitionEngine)
+                let result = try await speech.recognizeResult(url: window.url, language: settings.language, localOnly: settings.localRecognition, engine: settings.recognitionEngine, withTimestamps: window.overlap)
                 guard !Task.isCancelled, generation == pipelineGeneration else { return }
                 lastRecognitionAt = Date()
-                _ = commitPreview(text, window: window, epoch: epoch)
+                _ = commitPreview(result, window: window, epoch: epoch)
             } catch {
                 // Preview failures never block or delete the journalled final audio.
             }
         }
     }
+    private func recognitionText(_ result: RecognitionResult, for job: AudioJob) throws -> String {
+        let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !RepeatedText.containsRun(text) else { throw BridgeError("识别内容疑似重复。") }
+        guard job.overlap, job.recognitionFailures == 0, !text.isEmpty else { return text }
+        let previous = jobs.last { earlier in
+            guard earlier.id != job.id, earlier.deletedAt == nil, earlier.created < job.created,
+                  !earlier.original.isEmpty, !RepeatedText.containsRun(earlier.original) else { return false }
+            if let timeline = job.audioTimelineID { return earlier.audioTimelineID == timeline }
+            return earlier.sessionID == job.sessionID
+        }
+        guard let previous else { return text }
+        var shared = job.effectiveContextSampleCount
+        if let start = job.audioStartSample, let end = previous.audioEndSample {
+            shared = max(0, min(shared, Int(end - start)))
+        }
+        guard shared > 0 else { return text }
+        let maximumDuration = Double(job.effectiveContextSampleCount + (job.newAudioSampleCount ?? 160000)) / 16000
+        guard let resolved = RecognitionBoundary.resolve(RecognitionResult(text: text, spans: result.spans), previous: previous.original,
+            sharedSamples: shared, maximumDuration: maximumDuration) else { throw BridgeError("正在确认接续音频中的新内容。") }
+        return resolved
+    }
     @discardableResult func commitPreview(_ text: String, window: SpeechWindow, epoch: UUID) -> Bool {
-        guard epoch == captureEpoch, !finalizedWindows.contains(window.id), !text.isEmpty else { return false }
-        guard !RepeatedText.containsRun(text) else { return false }
+        commitPreview(RecognitionResult(text: text), window: window, epoch: epoch)
+    }
+    @discardableResult func commitPreview(_ result: RecognitionResult, window: SpeechWindow, epoch: UUID) -> Bool {
+        guard epoch == captureEpoch, !finalizedWindows.contains(window.id), !result.text.isEmpty else { return false }
+        var draft = AudioJob(id: window.id, sessionID: sessionID, created: window.date, audioFile: window.url.lastPathComponent,
+            language: captureSettings?.language ?? settings.language, localRecognition: settings.localRecognition, overlap: window.overlap)
+        draft.contextSampleCount = window.contextSampleCount; draft.audioStartSample = window.audioStartSample
+        draft.newAudioSampleCount = Int((window.duration * 16000).rounded()); draft.audioTimelineID = window.audioTimelineID
+        guard let text = try? recognitionText(result, for: draft), !text.isEmpty else { return false }
         if draftWindowID != window.id { draftWindowID = window.id; draftStability = DraftStability() }
         draftText = draftStability.update(text)
         draftCaption = Caption(isDraft: true, id: window.id, date: window.date, original: draftText, translated: "")
         capture?.setComplete(MeetingRules.looksComplete(text, language: captureSettings?.language ?? settings.language), id: window.id)
         publishPhone(); return true
     }
-    func acceptCapturedAudio(url: URL, date: Date, overlap: Bool, epoch: UUID, settings: AppSettings, id: UUID = UUID(), preview: String? = nil) {
+    func acceptCapturedAudio(url: URL, date: Date, overlap: Bool, epoch: UUID, settings: AppSettings, id: UUID = UUID(), preview: String? = nil, window: SpeechWindow? = nil) {
         guard epoch == captureEpoch else { try? FileManager.default.removeItem(at: url); return }
-        jobs.append(AudioJob(id: id, sessionID: sessionID, created: date, audioFile: url.lastPathComponent, language: settings.language, localRecognition: settings.localRecognition, targetLanguage: settings.targetLanguage, recognitionEngine: settings.recognitionEngine, previewText: preview, overlap: overlap))
+        var job = AudioJob(id: id, sessionID: sessionID, created: date, audioFile: url.lastPathComponent, language: settings.language,
+            localRecognition: settings.localRecognition, targetLanguage: settings.targetLanguage, recognitionEngine: settings.recognitionEngine,
+            terminologyDomains: settings.terminologyDomains, previewText: preview, overlap: overlap)
+        if let window {
+            job.contextSampleCount = window.contextSampleCount; job.audioStartSample = window.audioStartSample
+            job.newAudioSampleCount = Int((window.duration * 16000).rounded()); job.audioTimelineID = window.audioTimelineID
+        }
+        jobs.append(job)
         persist(); publishPhone(); pump()
     }
     @discardableResult func commitRecognition(_ text: String, for id: UUID, generation: Int? = nil) -> Bool {
+        commitRecognition(RecognitionResult(text: text), for: id, generation: generation)
+    }
+    @discardableResult func commitRecognition(_ result: RecognitionResult, for id: UUID, generation: Int? = nil) -> Bool {
         guard generation == nil || generation == pipelineGeneration else { return false }
         guard let index = jobs.firstIndex(where: { $0.id == id && $0.deletedAt == nil && $0.stage == .recognize }) else { return false }
-        if RepeatedText.containsRun(text) {
-            failed(id, error: BridgeError("识别原文出现异常重复。")); return false
+        if RepeatedText.containsRun(result.text) {
+            jobs[index].recognitionSuspected = true
+            failed(id, error: BridgeError("识别内容疑似重复。")); return false
         }
+        let text: String
+        do { text = try recognitionText(result, for: jobs[index]) }
+        catch { failed(id, error: error); return false }
         if text.isEmpty, jobs[index].recognitionFailures > 0 || jobs[index].previewText?.isEmpty == false {
             failed(id, error: BridgeError("识别未返回可用文字。")); return false
         }
         jobs[index].original = text
-        jobs[index].previewText = nil
+        jobs[index].previewText = nil; jobs[index].recognitionSuspected = false
         jobs[index].stage = text.isEmpty ? .done : .translate
         jobs[index].attempts = 0; jobs[index].repetitionRetries = nil; jobs[index].error = ""
         if persist() { store?.removeAudio(jobs[index]) }
@@ -783,7 +859,7 @@ final class AppModel: ObservableObject {
     @discardableResult func commitTranslation(_ text: String, for id: UUID, generation: Int? = nil) -> Bool {
         guard generation == nil || generation == pipelineGeneration else { return false }
         guard let index = jobs.firstIndex(where: { $0.id == id && $0.deletedAt == nil && $0.stage == .translate }) else { return false }
-        if RepeatedText.containsRun(text) { recoverRepeatedTranslation(jobID: id); return false }
+        if RepeatedText.containsTranslationRun(text) { recoverRepeatedTranslation(jobID: id); return false }
         jobs[index].translated = text; jobs[index].stage = .done; jobs[index].error = ""
         persist(); publishPhone(); return true
     }
@@ -846,7 +922,8 @@ final class AppModel: ObservableObject {
         if let activity = sleepActivity { ProcessInfo.processInfo.endActivity(activity); sleepActivity = nil }
     }
     func updateFloatingAppearance() {
-        floating?.alphaValue = settings.floatingOpacity
+        floating?.alphaValue = 1
+        floating?.hasShadow = settings.floatingOpacity > 0.001
         floating?.level = settings.floatingAlwaysOnTop ? .floating : .normal
         floating?.isFloatingPanel = settings.floatingAlwaysOnTop
         settings.save()
@@ -858,6 +935,7 @@ final class AppModel: ObservableObject {
                 let panel = CaptionPanel(contentRect: NSRect(x: 160, y: 120, width: 720, height: 330), styleMask: [.titled, .closable, .resizable, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: false)
                 panel.title = "听桥 · 实时字幕"; panel.titleVisibility = .hidden
                 panel.titlebarAppearsTransparent = true; panel.isMovableByWindowBackground = true
+                panel.isOpaque = false; panel.backgroundColor = .clear
                 panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
                 panel.isReleasedWhenClosed = false; panel.minSize = NSSize(width: 560, height: 195)
                 panel.contentView = NSHostingView(rootView: FloatingCaptions(model: self))

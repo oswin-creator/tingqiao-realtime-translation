@@ -32,18 +32,18 @@
 | --- | --- |
 | **Two ways to listen** | Capture system or application audio for online meetings, or choose a built-in, USB, or Bluetooth microphone in person. |
 | **16 language choices** | Choose source and target independently. Whisper uses one multilingual model for all choices. |
-| **Your recognition engine** | Use Apple speech recognition or run Whisper large-v3-turbo locally through whisper.cpp and Metal. |
+| **Your recognition engine** | Apple speech, Whisper Turbo, Whisper Medium KomixV2 (Korean), Whisper Large V3, or Qwen3-ASR-1.7B. Local models are downloaded separately. |
 | **Your translation provider** | Google trial endpoint, Google Cloud Translation, Index-Translate, or a Chat Completions-compatible API. |
 | **Context that stays in context** | Optionally send the preceding 1–6 segments to the translation model. Only the current segment becomes its subtitle. |
 | **Captions where you need them** | A resizable desktop overlay with font, opacity, pinning, history scrolling, and follow-latest controls. Android receives captions over Wi-Fi or BLE. |
-| **A reply when you ask** | “Help me answer” and “Explain that” use the latest 15 confirmed segments on demand. Responses have a configurable limit of 1–3 sentences, with collapsible reasoning when the model returns it. |
+| **A reply when you ask** | Use five minutes of background to answer all questions in the latest 15 segments, or explain those 15 segments. Answers use the question’s language with a target-language translation. Set 1–3 sentences per answer; returned reasoning can collapse. |
 | **Keep the useful parts** | Local transcript history, individual deletion, clear/undo, and TXT export. Audio segments are saved before processing. |
 
 ### Available languages
 
 English · Korean · Japanese · Simplified Chinese · Traditional Chinese · Spanish · French · German · Portuguese · Italian · Russian · Arabic · Hindi · Indonesian · Vietnamese · Thai.
 
-Apple recognition availability depends on macOS and installed language resources. In **Translation settings → Speech recognition**, check support, open system language settings, or manually install the current SpeechTranscriber language on macOS 26. Whisper uses the same downloaded model when you change languages.
+Apple recognition availability depends on macOS and installed language resources. In **Translation settings → Speech recognition**, check support, open system language settings, or manually install the current SpeechTranscriber language on macOS 26. Multilingual models share their downloaded weights across languages; KomixV2 is restricted to Korean.
 
 ## A phone-sized caption screen
 
@@ -70,7 +70,7 @@ Use a general conversation model, such as DeepSeek, for the separate assistant A
 
 1. Open TingQiao and choose **online** or **in-person** mode.
 2. Select the audio source, source language, and target language.
-3. In **Translation settings**, choose recognition and translation providers. For Whisper, download or import the approximately **1.6 GB** model once.
+3. In **Translation settings**, choose recognition and translation providers. For a local engine, review its installation notice, then download or import that model once.
 4. If needed, enter your API endpoint, model name, and key. The meeting assistant has independent API settings.
 5. Start translating and allow the relevant macOS permissions.
 6. Optionally connect the Android companion or open the floating caption window.
@@ -83,29 +83,43 @@ In online mode, TingQiao reads playback audio through ScreenCaptureKit and leave
 
 | Platform | Download | Requirements |
 | --- | --- | --- |
-| Mac | [TingQiao 0.2.22 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.22/TingQiao-macOS-arm64-0.2.22.dmg) | Apple silicon, macOS 14+ |
-| Android companion | [TingQiao Captions 0.3.2 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.22/TingQiao-Captions-Android-0.3.2.apk) | Android 8+ |
-| Integrity | [SHA-256 checksums](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.22/SHA256SUMS.txt) | Verify downloaded files |
+| Mac | [TingQiao 0.2.29 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.29/TingQiao-macOS-arm64-0.2.29.dmg) | Apple silicon, macOS 14+ |
+| Android companion | [TingQiao Captions 0.3.2 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.29/TingQiao-Captions-Android-0.3.2.apk) | Android 8+ |
+| Integrity | [SHA-256 checksums](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.29/SHA256SUMS.txt) | Verify downloaded files |
 
 Open the DMG and drag TingQiao to Applications. Install the APK on Android, or scan the Mac's Wi-Fi QR code with a phone camera and read captions directly in the browser. Mac and phone must share the same Wi-Fi for browser access.
 
 The Mac preview has an ad-hoc signature and is not Apple-notarized. macOS may block its first launch. If you trust the download, follow [Apple's opening instructions](https://support.apple.com/en-us/102445). Android may request permission to install this APK source. See [installation help](docs/INSTALL.md).
 
-Whisper weights are downloaded separately, on demand, from the app settings.
+Local ASR weights are downloaded separately from the sources shown in settings. Each model can be removed individually.
 
-## Settings and terminology · 0.2.22
+## Recognition models · 0.2.29
+
+| Engine | Download | Installed | Language |
+| --- | --- | --- | --- |
+| Apple system speech | Managed by macOS | Managed by macOS | Depends on system resources |
+| Whisper large-v3-turbo | 1.62 GB | 1.62 GB | Multilingual |
+| Whisper Medium KomixV2 | 3.06 GB | About 1.53 GB | Korean |
+| Whisper Large V3 | 3.10 GB | 3.10 GB | Multilingual |
+| Qwen3-ASR-1.7B Q8 | 2.19 GB | 2.19 GB | Multilingual |
+
+Model weights are not included in the installer. Each download has an installation notice, source link, progress, checksum validation, and an individual removal action. KomixV2 preserves byte-token encoding; existing affected files are repaired on first use without downloading the weights again.
+
+Confirmed endings submit after about 0.7 seconds of silence, other endings after about 1.5 seconds. Continuous speech seeks a pause from 7 seconds, with a 10-second cap. Forced cuts carry 1.5 seconds into the next segment. Repetition checks preserve a usable preview and allow one clean-audio retry. [Release notes](docs/RELEASE-0.2.29.md).
+
+## Settings and terminology
 
 Translation settings now use four consistent tabs: recognition, translation API, terminology/context, and caption display. Save remains visible at the bottom. Detailed audio rules are available from one information button.
 
-The app includes **10,018 Wikidata concepts** plus curated seeds, yielding **10,041 default entries after deduplication**. No extra terminology download or online lookup is required. Custom JSON import/export remains available; user terms take priority. A verified local update can replace the bundled snapshot.
+The app includes **14,160 Wikidata concepts** plus curated terms for statistics, difference-in-differences, and other fields. Select one or more professional fields before each session; saved selections are preselected next time. No extra terminology download or online lookup is required. Custom JSON import/export remains available; user terms take priority. A verified local update can replace the bundled snapshot.
 
-Term hints augment Index and custom translation requests, not Whisper transcripts or the current Google interfaces. Only a few relevant terms are sent, capped at roughly 300 estimated tokens / 900 UTF-8 bytes. The pack has uneven language coverage; it is not a guarantee of correct translations. Data: Wikidata, CC0-1.0, snapshot 2026-11-05. See [terminology notes](docs/TERMINOLOGY.md).
+Term hints augment Index and custom translation requests, not Whisper transcripts or the current Google interfaces. Only a few relevant terms are sent, capped at roughly 300 estimated tokens / 900 UTF-8 bytes. The pack has uneven language coverage; it is not a guarantee of correct translations. Data: Wikidata, CC0-1.0, snapshot 2026-11-06. See [terminology notes](docs/TERMINOLOGY.md).
 
 ![Translation settings, synthetic configuration](docs/images/settings.png)
 
 ## Build from source
 
-The repository includes **Mac 0.2.22** and **Android 0.3.2** sources. Build output, Whisper recognition weights, credentials, and signing keys are excluded. The small licensed Silero detector and public Wikidata snapshot are included.
+The repository includes **Mac 0.2.29** and **Android 0.3.2** sources. Build output, Whisper recognition weights, credentials, and signing keys are excluded. The small licensed Silero detector and public Wikidata snapshot are included.
 
 ### Mac
 
@@ -118,6 +132,7 @@ xcode-select --install
 # If using Homebrew:
 brew install cmake python
 zsh build-whisper.sh
+zsh build-qwen.sh
 zsh build.sh
 open build/听桥.app
 ~~~
@@ -152,7 +167,7 @@ See [development notes](docs/DEVELOPMENT.md) for the source map, dependency vers
 - API keys are stored in the **macOS Keychain**. The phone protocols do not return them.
 - Apple local recognition and Whisper process audio on the Mac. Apple online recognition sends audio to Apple when selected.
 - Translation sends confirmed text to the selected provider. Enabled context also sends preceding text and available translations.
-- The assistant sends up to 15 recent confirmed segments to its separately configured provider when requested.
+- The assistant sends the latest 15 confirmed segments plus up to five minutes of preceding meeting context to its separately configured provider, only when requested.
 - Transcripts and pending audio stay in **~/Library/Application Support/TingQiao/**. Successfully recognized audio is removed after text is saved.
 - Wi-Fi pairing uses a bearer credential over **local HTTP**. Use a trusted network. BLE uses encrypted GATT characteristics and application pairing credentials.
 - This public snapshot excludes personal settings, local records, pairing data, private-device reports, screenshots of real conversations, and signing output.

@@ -13,6 +13,22 @@ enum TranslationProvider: String, Codable, CaseIterable {
 
 enum RecognitionEngine: String, Codable, CaseIterable {
     case apple = "Apple 系统识别", whisperTurbo = "Whisper large-v3-turbo"
+    case whisperKomix = "Whisper Medium KomixV2"
+    case qwenASR = "Qwen3-ASR-1.7B"
+    case whisperLarge = "Whisper Large V3"
+
+    var isLocalModel: Bool { self != .apple }
+    var isWhisper: Bool { self != .apple && self != .qwenASR }
+    var shortTitle: String {
+        switch self {
+        case .apple: return "Apple"
+        case .whisperTurbo: return "Whisper Turbo"
+        case .whisperKomix: return "Whisper KomixV2"
+        case .qwenASR: return "Qwen3 ASR"
+        case .whisperLarge: return "Whisper Large V3"
+        }
+    }
+    func supports(_ language: String) -> Bool { self != .whisperKomix || language.hasPrefix("ko") }
 }
 
 enum MeetingLanguage: String, Codable, CaseIterable {
@@ -66,7 +82,7 @@ struct AppSettings: Codable {
     var translationContextCount = 4
     var useTerminology = true
     var useTerminologyMemory = true
-    var terminologyTopic = ""
+    var terminologyDomains: [String] = []
     var floatingOpacity = 1.0
     var floatingAlwaysOnTop = true
     var floatingFontSize = 24.0
@@ -83,7 +99,7 @@ struct AppSettings: Codable {
         case mode, language, targetLanguage, microphoneID, applicationID, provider, baseURL, model
         case recognitionEngine, localRecognition, showOriginal, fontSize, useTranslationContext, translationContextCount
         case floatingOpacity, floatingAlwaysOnTop, floatingFontSize
-        case useTerminology, useTerminologyMemory, terminologyTopic
+        case useTerminology, useTerminologyMemory, terminologyDomains
     }
 }
 
@@ -108,8 +124,8 @@ extension AppSettings {
         translationContextCount = try values.decodeIfPresent(Int.self, forKey: .translationContextCount) ?? translationContextCount
         useTerminology = try values.decodeIfPresent(Bool.self, forKey: .useTerminology) ?? useTerminology
         useTerminologyMemory = try values.decodeIfPresent(Bool.self, forKey: .useTerminologyMemory) ?? useTerminologyMemory
-        terminologyTopic = String((try values.decodeIfPresent(String.self, forKey: .terminologyTopic) ?? "").prefix(120))
-        floatingOpacity = min(1, max(0.35, try values.decodeIfPresent(Double.self, forKey: .floatingOpacity) ?? floatingOpacity))
+        terminologyDomains = Array(Set(try values.decodeIfPresent([String].self, forKey: .terminologyDomains) ?? [])).sorted()
+        floatingOpacity = min(1, max(0, try values.decodeIfPresent(Double.self, forKey: .floatingOpacity) ?? floatingOpacity))
         floatingAlwaysOnTop = try values.decodeIfPresent(Bool.self, forKey: .floatingAlwaysOnTop) ?? floatingAlwaysOnTop
         floatingFontSize = min(48, max(12, try values.decodeIfPresent(Double.self, forKey: .floatingFontSize) ?? fontSize))
     }
@@ -121,20 +137,20 @@ struct TranslationContextTurn: Codable, Equatable {
 }
 
 enum RepeatedText {
-    static let limit = 15
-    static func containsRun(_ text: String) -> Bool {
-        // Ignore separators for single characters and pairs, e.g. “아 아…” or “数据，数据…”.
-        let characters = Array(text.filter { !$0.isWhitespace && !$0.isPunctuation })
-        if containsRun(in: characters, unitLength: 1) || containsRun(in: characters, unitLength: 2) {
-            return true
-        }
-        let words = Array(text.lowercased().split { $0.isWhitespace || $0.isPunctuation })
-        return (1...4).contains { containsRun(in: words, unitLength: $0) }
+    static let limit = 10
+    static let translationLimit = 15
+    static func containsRun(_ text: String, minimum: Int = limit) -> Bool {
+        let normalized = text.precomposedStringWithCanonicalMapping.lowercased()
+        let characters = Array(normalized.filter { !$0.isWhitespace && !$0.isPunctuation })
+        let words = Array(normalized.replacingOccurrences(of: "’", with: "'").replacingOccurrences(of: "'", with: "")
+            .split { $0.isWhitespace || $0.isPunctuation })
+        return (1...10).contains { containsRun(in: characters, unitLength: $0, minimum: minimum) }
+            || (1...10).contains { containsRun(in: words, unitLength: $0, minimum: minimum) }
     }
-
-    private static func containsRun<Element: Equatable>(in elements: [Element], unitLength: Int) -> Bool {
-        guard elements.count >= limit * unitLength else { return false }
-        let requiredMatches = (limit - 1) * unitLength
+    static func containsTranslationRun(_ text: String) -> Bool { containsRun(text, minimum: translationLimit) }
+    private static func containsRun<Element: Equatable>(in elements: [Element], unitLength: Int, minimum: Int) -> Bool {
+        guard elements.count >= minimum * unitLength else { return false }
+        let requiredMatches = (minimum - 1) * unitLength
         var matches = 0
         for index in unitLength..<elements.count {
             matches = elements[index] == elements[index - unitLength] ? matches + 1 : 0
@@ -142,6 +158,17 @@ enum RepeatedText {
         }
         return false
     }
+}
+
+struct RecognitionSpan: Codable, Equatable {
+    var text: String
+    var start: Double
+    var end: Double
+}
+
+struct RecognitionResult: Equatable {
+    var text: String
+    var spans: [RecognitionSpan] = []
 }
 
 enum TranslationHistory {
@@ -153,7 +180,7 @@ enum TranslationHistory {
         for earlier in jobs[..<index].reversed() {
             guard earlier.deletedAt == nil, earlier.sessionID == job.sessionID, earlier.stage != .recognize,
                   !earlier.original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  !RepeatedText.containsRun(earlier.original), !RepeatedText.containsRun(earlier.translated) else { continue }
+                  !RepeatedText.containsRun(earlier.original), !RepeatedText.containsTranslationRun(earlier.translated) else { continue }
             let translation = earlier.resolvedTargetLanguage == job.resolvedTargetLanguage && !earlier.translated.isEmpty ? earlier.translated : nil
             history.append(TranslationContextTurn(original: earlier.original, translation: translation))
             if history.count == limit { break }
@@ -218,10 +245,21 @@ struct AudioJob: Codable, Identifiable {
     var localRecognition: Bool
     var targetLanguage: MeetingLanguage? = nil
     var recognitionEngine: RecognitionEngine? = nil
+    var terminologyDomains: [String]? = nil
     var previewText: String? = nil
     var repetitionRetries: Int? = nil
     var translationRepetitionRetries: Int? = nil
     var overlap: Bool = false
+    var contextSampleCount: Int? = nil
+    var audioStartSample: Int64? = nil
+    var newAudioSampleCount: Int? = nil
+    var audioTimelineID: UUID? = nil
+    var recognitionSuspected: Bool? = nil
+    var effectiveContextSampleCount: Int { contextSampleCount ?? (overlap ? 8000 : 0) }
+    var audioEndSample: Int64? {
+        guard let start = audioStartSample, let count = newAudioSampleCount else { return nil }
+        return start + Int64(effectiveContextSampleCount + count)
+    }
     var stage: JobStage = .recognize
     var original = ""
     var translated = ""
@@ -231,7 +269,6 @@ struct AudioJob: Codable, Identifiable {
     var deletedAt: Date?
     var resolvedTargetLanguage: MeetingLanguage { targetLanguage ?? .simplifiedChinese }
 
-    // Older journals tracked repetition separately from engine failures.
     var recognitionFailures: Int { max(attempts, repetitionRetries ?? 0) }
 }
 
@@ -331,17 +368,49 @@ final class SessionStore {
 }
 
 enum CaptionText {
-    // Only remove overlap from adjacent chunks in the same capture session.
-    // Repeated complete sentences are preserved; a short trailing word is never discarded.
+    static func comparisonText(_ text: String) -> String {
+        String(text.precomposedStringWithCanonicalMapping.lowercased().filter { !$0.isWhitespace && !$0.isPunctuation })
+    }
     static func removingOverlap(previous: String, current: String) -> String {
-        let left = Array(previous), right = Array(current)
+        let left = Array(comparisonText(previous))
+        let characters = Array(current.precomposedStringWithCanonicalMapping)
+        var right: [Character] = [], offsets: [Int] = []
+        for (index, character) in characters.enumerated() {
+            for c in String(character).lowercased() where !c.isWhitespace && !c.isPunctuation {
+                right.append(c); offsets.append(index + 1)
+            }
+        }
         let limit = min(80, left.count, right.count)
         guard limit >= 8 else { return current }
         for count in stride(from: limit, through: 8, by: -1) {
-            if left.suffix(count).elementsEqual(right.prefix(count)), count < right.count {
-                return String(right.dropFirst(count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if count < right.count && left.suffix(count).elementsEqual(right.prefix(count)) {
+                let rest = String(characters.dropFirst(offsets[count - 1]))
+                return String(rest.drop(while: { $0.isWhitespace || $0.isPunctuation })).trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }
         return current
+    }
+}
+
+enum RecognitionBoundary {
+    static func resolve(_ result: RecognitionResult, sharedSamples: Int, maximumDuration: Double) -> String? {
+        guard sharedSamples > 0, !result.text.isEmpty else { return result.text }
+        let boundary = Double(sharedSamples) / 16000
+        let spans = result.spans
+        let sameText = CaptionText.comparisonText(spans.map(\.text).joined()) == CaptionText.comparisonText(result.text)
+        var lastStart = -1.0
+        let valid = spans.count > 1 && sameText && spans.allSatisfy { span in
+            defer { lastStart = span.start }
+            return span.start.isFinite && span.end.isFinite && span.start >= 0 && span.end > span.start
+                && span.start >= lastStart && span.end <= maximumDuration + 0.2
+        }
+        guard valid else { return nil }
+        let text = spans.filter { $0.end > boundary }.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+    static func resolve(_ result: RecognitionResult, previous: String, sharedSamples: Int, maximumDuration: Double) -> String? {
+        if let timed = resolve(result, sharedSamples: sharedSamples, maximumDuration: maximumDuration) { return timed }
+        let aligned = CaptionText.removingOverlap(previous: previous, current: result.text)
+        return aligned != result.text ? aligned : nil
     }
 }
