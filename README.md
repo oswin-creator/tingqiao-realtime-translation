@@ -83,17 +83,24 @@ In online mode, TingQiao reads playback audio through ScreenCaptureKit and leave
 
 | Platform | Download | Requirements |
 | --- | --- | --- |
-| Mac | [TingQiao 0.2.29 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.29/TingQiao-macOS-arm64-0.2.29.dmg) | Apple silicon, macOS 14+ |
-| Android companion | [TingQiao Captions 0.3.2 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.29/TingQiao-Captions-Android-0.3.2.apk) | Android 8+ |
-| Integrity | [SHA-256 checksums](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.29/SHA256SUMS.txt) | Verify downloaded files |
+| Mac | [TingQiao 0.2.31 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.31/TingQiao-macOS-arm64-0.2.31.dmg) | Apple silicon, macOS 14+ |
+| Android companion | [TingQiao Captions 0.3.2 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.31/TingQiao-Captions-Android-0.3.2.apk) | Android 8+ |
+| Integrity | [SHA-256 checksums](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.31/SHA256SUMS.txt) | Verify downloaded files |
 
 Open the DMG and drag TingQiao to Applications. Install the APK on Android, or scan the Mac's Wi-Fi QR code with a phone camera and read captions directly in the browser. Mac and phone must share the same Wi-Fi for browser access.
 
-The Mac preview has an ad-hoc signature and is not Apple-notarized. macOS may block its first launch. If you trust the download, follow [Apple's opening instructions](https://support.apple.com/en-us/102445). Android may request permission to install this APK source. See [installation help](docs/INSTALL.md).
+The Mac preview uses a stable self-signed release identity and is not Apple-notarized. macOS may block its first launch. If you trust the download, follow [Apple's opening instructions](https://support.apple.com/en-us/102445). Android may request permission to install this APK source. See [installation help](docs/INSTALL.md).
 
 Local ASR weights are downloaded separately from the sources shown in settings. Each model can be removed individually.
 
-## Recognition models · 0.2.29
+## What changed in 0.2.31
+
+- Reduced workspace layout work during meter updates and manual caption scrolling.
+- Main and floating windows keep their content dimensions during edge dragging, then reflow on release.
+- **Check for updates** beside the version checks GitHub Releases, verifies the installer and signing identity, and installs when capture and other active work have ended.
+- Stable self-signed release identity. The first upgrade from older ad-hoc builds may require audio permissions again; permission retention remains subject to macOS.
+
+## Recognition models · 0.2.31
 
 | Engine | Download | Installed | Language |
 | --- | --- | --- | --- |
@@ -105,7 +112,7 @@ Local ASR weights are downloaded separately from the sources shown in settings. 
 
 Model weights are not included in the installer. Each download has an installation notice, source link, progress, checksum validation, and an individual removal action. KomixV2 preserves byte-token encoding; existing affected files are repaired on first use without downloading the weights again.
 
-Confirmed endings submit after about 0.7 seconds of silence, other endings after about 1.5 seconds. Continuous speech seeks a pause from 7 seconds, with a 10-second cap. Forced cuts carry 1.5 seconds into the next segment. Repetition checks preserve a usable preview and allow one clean-audio retry. [Release notes](docs/RELEASE-0.2.29.md).
+Confirmed endings submit after about 0.7 seconds of silence, other endings after about 1.5 seconds. Continuous speech seeks a pause from 7 seconds, with a 10-second cap. Forced cuts carry 1.5 seconds into the next segment. Repetition checks preserve a usable preview and allow one clean-audio retry. [Release notes](docs/RELEASE-0.2.31.md).
 
 ## Settings and terminology
 
@@ -119,7 +126,7 @@ Term hints augment Index and custom translation requests, not Whisper transcript
 
 ## Build from source
 
-The repository includes **Mac 0.2.29** and **Android 0.3.2** sources. Build output, Whisper recognition weights, credentials, and signing keys are excluded. The small licensed Silero detector and public Wikidata snapshot are included.
+The repository includes **Mac 0.2.31** and **Android 0.3.2** sources. Build output, Whisper recognition weights, credentials, and signing keys are excluded. The small licensed Silero detector and public Wikidata snapshot are included.
 
 ### Mac
 

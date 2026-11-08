@@ -84,17 +84,24 @@ Apple 识别范围取决于系统和语言资源。在「翻译设置 → 语音
 
 | 平台 | 下载文件 | 系统要求 |
 | --- | --- | --- |
-| Mac | [听桥 0.2.29 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.29/TingQiao-macOS-arm64-0.2.29.dmg) | Apple 芯片，macOS 14+ |
-| 安卓随身字幕 | [听桥字幕 0.3.2 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.29/TingQiao-Captions-Android-0.3.2.apk) | Android 8+ |
-| 文件校验 | [SHA-256 校验值](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.29/SHA256SUMS.txt) | 可用于核对下载完整性 |
+| Mac | [听桥 0.2.31 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.31/TingQiao-macOS-arm64-0.2.31.dmg) | Apple 芯片，macOS 14+ |
+| 安卓随身字幕 | [听桥字幕 0.3.2 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.31/TingQiao-Captions-Android-0.3.2.apk) | Android 8+ |
+| 文件校验 | [SHA-256 校验值](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.31/SHA256SUMS.txt) | 可用于核对下载完整性 |
 
 Mac 打开 DMG，把听桥拖进「应用程序」。安卓下载 APK 安装。也可以让手机与电脑连接同一个 Wi-Fi，用手机相机扫描 Mac 二维码，在浏览器直接看字幕，无需下载 App。
 
-Mac 测试包采用 ad-hoc 签名，尚未经过 Apple 公证，首次打开可能被系统拦截。确认来源可信后，可按 [Apple 官方说明](https://support.apple.com/zh-cn/102445)处理。安卓可能需要允许安装该文件来源的 APK。详细步骤见[安装说明](docs/INSTALL.md)。
+Mac 测试包使用固定自签名证书，尚未经过 Apple 公证，首次打开可能被系统拦截。确认来源可信后，可按 [Apple 官方说明](https://support.apple.com/zh-cn/102445)处理。安卓可能需要允许安装该文件来源的 APK。详细步骤见[安装说明](docs/INSTALL.md)。
 
 本地识别模型在 App 中按需单独下载，每个模型都可单独移除。
 
-## 识别模型 · 0.2.29
+## 0.2.31 更新
+
+- 音量条独立刷新，手动上翻暂停字幕跟随，减少主页面重复布局。
+- 主窗口和悬浮窗拖动边缘时保持内容尺寸，松开后统一排版，字幕继续更新。
+- 版本号旁新增「检查更新」，从 GitHub 获取正式版本，校验安装包与签名后，在收音和当前任务结束时安装并重开。
+- 发布包采用固定自签名。从旧临时签名版本首次升级时，可能需要重新授予录音权限；后续权限保留仍由 macOS 决定。
+
+## 识别模型 · 0.2.31
 
 | 引擎 | 下载大小 | 安装后 | 语言 |
 | --- | --- | --- | --- |
@@ -106,7 +113,7 @@ Mac 测试包采用 ad-hoc 签名，尚未经过 Apple 公证，首次打开可�
 
 模型权重不放进安装包。下载前显示安装提示和来源，下载时显示进度，完成后校验；不用的模型可逐个移除。KomixV2 已修复韩语编码，旧文件首次使用时自动修复，无需重新下载权重。
 
-句尾明确时停顿约 0.7 秒提交，其他约 1.5 秒；连续发言约 7 秒起寻找自然停顿，最长 10 秒。强切后下一段附带前面 1.5 秒声音。异常重复先保留正常临时字幕，最多用本段音频复核一次。[查看更新说明](docs/RELEASE-0.2.29.md)。
+句尾明确时停顿约 0.7 秒提交，其他约 1.5 秒；连续发言约 7 秒起寻找自然停顿，最长 10 秒。强切后下一段附带前面 1.5 秒声音。异常重复先保留正常临时字幕，最多用本段音频复核一次。[查看更新说明](docs/RELEASE-0.2.31.md)。
 
 ## 设置与内置词库
 
@@ -120,7 +127,7 @@ Mac 测试包采用 ad-hoc 签名，尚未经过 Apple 公证，首次打开可�
 
 ## 从源码构建
 
-本仓库包含 **Mac 0.2.29** 和 **Android 0.3.2** 源码。
+本仓库包含 **Mac 0.2.31** 和 **Android 0.3.2** 源码。
 
 ### Mac
 

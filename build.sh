@@ -15,6 +15,7 @@ xcrun swiftc -file-prefix-map "$project_dir=." -swift-version 5 -O -parse-as-lib
 helper="$project_dir/build/whisper-engine/TingQiaoWhisper"
 if [[ ! -x "$helper" ]]; then print -u2 "先运行 ./build-whisper.sh 构建本机识别引擎"; exit 1; fi
 cp "$helper" "$app_dir/Contents/MacOS/TingQiaoWhisper"
+xcrun swiftc -file-prefix-map "$project_dir=." -swift-version 5 -O -parse-as-library -target arm64-apple-macosx14.0 -module-cache-path "$module_cache" "$project_dir/Sources/UpdateInstallation.swift" "$project_dir/Tools/Updater/main.swift" -o "$app_dir/Contents/MacOS/TingQiaoUpdater"
 qwen_helper="$project_dir/build/qwen-engine/TingQiaoQwen"
 if [[ ! -x "$qwen_helper" ]]; then print -u2 "先运行 ./build-qwen.sh 构建 Qwen 识别引擎"; exit 1; fi
 cp "$qwen_helper" "$app_dir/Contents/MacOS/TingQiaoQwen"
@@ -29,10 +30,14 @@ cp "$vad_model" "$app_dir/Contents/Resources/"
 mkdir -p "$app_dir/Contents/Resources/Licenses"
 cp "$project_dir"/docs/licenses/* "$app_dir/Contents/Resources/Licenses/"
 cp "$project_dir/Resources/THIRD-PARTY-NOTICES.txt" "$app_dir/Contents/Resources/THIRD-PARTY-NOTICES.txt"
-sign_identity="${TINGQIAO_SIGN_IDENTITY:--}"
-codesign --force --sign "$sign_identity" "$app_dir/Contents/MacOS/TingQiaoWhisper"
-codesign --force --sign "$sign_identity" "$app_dir/Contents/MacOS/TingQiaoQwen"
-codesign --force --sign "$sign_identity" "$app_dir/Contents/MacOS/libTingQiaoVAD.dylib"
-codesign --force --deep --sign "$sign_identity" --identifier cn.tingqiao.bridge "$app_dir"
-codesign --verify --deep --strict "$app_dir"
+sign_identity="${TINGQIAO_SIGN_IDENTITY:-}"
+sign_keychain="${TINGQIAO_SIGN_KEYCHAIN:-}"
+local_signing="$project_dir/.local-signing"
+if [[ -z "$sign_identity" && -f "$local_signing/identity.txt" ]]; then
+    sign_identity="$(<"$local_signing/identity.txt")"
+    sign_keychain="$local_signing/release-signing.keychain-db"
+    python3 "$project_dir/Tools/Signing/unlock.py" "$local_signing"
+fi
+sign_identity="${sign_identity:--}"
+python3 "$project_dir/Tools/Signing/sign.py" "$sign_identity" "$sign_keychain" "$app_dir"
 print -r -- "$app_dir"

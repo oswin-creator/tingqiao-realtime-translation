@@ -3,6 +3,10 @@ import AppKit
 import Speech
 import SwiftUI
 
+final class AudioLevelPresentation: ObservableObject {
+    @Published var value = 0.0
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published var settings = AppSettings.load()
@@ -11,7 +15,12 @@ final class AppModel: ObservableObject {
     @Published var isStarting = false
     @Published var isStopping = false
     @Published var isReconnecting = false
-    @Published var level = 0.0
+    let appUpdates = AppUpdateController()
+    let audioLevel = AudioLevelPresentation()
+    var level: Double {
+        get { audioLevel.value }
+        set { audioLevel.value = newValue }
+    }
     @Published var notice = ""
     @Published var devices: [InputDevice] = []
     @Published var applications: [MeetingApplication] = []
@@ -909,6 +918,17 @@ final class AppModel: ObservableObject {
             }
         }
     }
+    var canInstallAppUpdate: Bool {
+        !languageSelectionLocked && !recognitionActive && !previewActive && translationsActive.isEmpty
+            && !assistantBusy && !isRecoveringPipeline && !choosingMeetingDomains && !isClearing
+            && !downloadingWhisper && downloadingModel == nil && !installingAppleLanguage
+    }
+    func installAppUpdate() {
+        guard canInstallAppUpdate else { return }
+        appUpdates.install(canInstall: { [weak self] in self?.canInstallAppUpdate == true }) {
+            NSApplication.shared.terminate(nil)
+        }
+    }
     func waitForPipelineRecovery() async { await pipelineRecovery?.value }
     func shutdown() async {
         terminating = true; isRunning = false
@@ -938,7 +958,7 @@ final class AppModel: ObservableObject {
                 panel.isOpaque = false; panel.backgroundColor = .clear
                 panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
                 panel.isReleasedWhenClosed = false; panel.minSize = NSSize(width: 560, height: 195)
-                panel.contentView = NSHostingView(rootView: FloatingCaptions(model: self))
+                panel.contentView = DeferredResizeContainer(rootView: FloatingCaptions(model: self))
                 let delegate = FloatingWindowDelegate { [weak self] in self?.floatingVisible = false }
                 floatingDelegate = delegate; panel.delegate = delegate
                 floating = panel

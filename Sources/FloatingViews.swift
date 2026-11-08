@@ -32,82 +32,140 @@ final class CaptionPanel: NSPanel {
     func windowWillClose(_ notification: Notification) { onClose() }
 }
 
-// Observe only user-initiated scrolling, so programmatic scrolling cannot disable follow.
 struct CaptionScrollObserver: NSViewRepresentable {
+    var followsLatest: Bool
+    var captions: [Caption]
     var onFollowChanged: (Bool) -> Void
-    func makeNSView(context: Context) -> Probe { let view = Probe(); view.onFollowChanged = onFollowChanged; return view }
-    func updateNSView(_ view: Probe, context: Context) { view.onFollowChanged = onFollowChanged; view.attach() }
+    func makeNSView(context: Context) -> Probe { Probe() }
+    func updateNSView(_ view: Probe, context: Context) {
+        view.configure(follow: followsLatest, captions: captions, onFollowChanged: onFollowChanged)
+    }
+    static func dismantleNSView(_ view: Probe, coordinator: ()) { view.detach() }
+
     final class Probe: NSView {
-        var onFollowChanged: ((Bool) -> Void)?
-        private weak var observedScroll: NSScrollView?
+        private weak var scroll: NSScrollView?
+        private weak var document: NSView?
         private var tokens: [NSObjectProtocol] = []
-        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); DispatchQueue.main.async { [weak self] in self?.attach() } }
-        override func viewDidMoveToSuperview() { super.viewDidMoveToSuperview(); DispatchQueue.main.async { [weak self] in self?.attach() } }
-        func attach() {
-            guard let scroll = enclosingScrollView, scroll !== observedScroll else { return }
-            tokens.forEach(NotificationCenter.default.removeObserver); tokens.removeAll()
-            observedScroll = scroll
-            tokens.append(NotificationCenter.default.addObserver(forName: NSScrollView.willStartLiveScrollNotification, object: scroll, queue: .main) { [weak self] _ in self?.onFollowChanged?(false) })
-            tokens.append(NotificationCenter.default.addObserver(forName: NSScrollView.didEndLiveScrollNotification, object: scroll, queue: .main) { [weak self, weak scroll] _ in
-                guard let scroll, let document = scroll.documentView else { return }
-                let visible = scroll.documentVisibleRect
-                let distance = document.isFlipped ? document.bounds.maxY - visible.maxY : visible.minY - document.bounds.minY
-                self?.onFollowChanged?(distance < 36)
-            })
+        private var wheelMonitor: Any?
+        private var pending: DispatchWorkItem?
+        private var gestureEnd: DispatchWorkItem?
+        private var onFollowChanged: ((Bool) -> Void)?
+        private var following = true
+        private var requestedFollow = true
+        private var manualPause = false
+        private var gestureActive = false
+        private var lastCaptions: [Caption] = []
+        private var viewportSize = NSSize.zero
+        private var documentSize = NSSize.zero
+        private var corrections = 0
+
+        func configure(follow: Bool, captions: [Caption], onFollowChanged: @escaping (Bool) -> Void) {
+            self.onFollowChanged = onFollowChanged
+            if !follow { manualPause = false }
+            if follow != requestedFollow {
+                requestedFollow = follow
+                following = follow && !manualPause
+                if following { corrections = 3; schedule() }
+                else { pending?.cancel() }
+            }
+            if captions != lastCaptions {
+                lastCaptions = captions; corrections = 3
+                if following { schedule() }
+            }
+            attach()
         }
-        deinit { tokens.forEach(NotificationCenter.default.removeObserver) }
-    }
-}
-
-// scrollTo can synchronously lay out a lazy stack. Run it after the current
-// SwiftUI update and coalesce requests when several captions arrive together.
-private final class CaptionScrollRequests: ObservableObject {
-    private var pending: DispatchWorkItem?
-
-    func schedule(_ scroll: @escaping () -> Void) {
-        cancel()
-        let item = DispatchWorkItem(block: scroll)
-        pending = item
-        DispatchQueue.main.async(execute: item)
-    }
-
-    func cancel() {
-        pending?.cancel()
-        pending = nil
+        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); attachLater() }
+        override func viewDidMoveToSuperview() { super.viewDidMoveToSuperview(); attachLater() }
+        private func attachLater() { DispatchQueue.main.async { [weak self] in self?.attach() } }
+        private func attach() {
+            guard let enclosing = enclosingScrollView else { return }
+            if scroll !== enclosing || document !== enclosing.documentView {
+                detach(); scroll = enclosing; document = enclosing.documentView
+                let center = NotificationCenter.default
+                tokens.append(center.addObserver(forName: NSScrollView.willStartLiveScrollNotification, object: enclosing, queue: .main) { [weak self] _ in self?.beginGesture() })
+                tokens.append(center.addObserver(forName: NSScrollView.didEndLiveScrollNotification, object: enclosing, queue: .main) { [weak self] _ in self?.settleGesture() })
+                if let document {
+                    document.postsFrameChangedNotifications = true
+                    tokens.append(center.addObserver(forName: NSView.frameDidChangeNotification, object: document, queue: .main) { [weak self] _ in self?.documentChanged() })
+                }
+                wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                    guard let self, let scroll = self.scroll, event.window === scroll.window,
+                          scroll.bounds.contains(scroll.convert(event.locationInWindow, from: nil)) else { return event }
+                    self.beginGesture(); self.settleGesture()
+                    return event
+                }
+                corrections = 3; schedule()
+            }
+            if viewportSize != enclosing.contentView.bounds.size {
+                viewportSize = enclosing.contentView.bounds.size
+                corrections = 3; schedule()
+            }
+        }
+        func beginGesture() {
+            gestureActive = true; manualPause = true; following = false
+            pending?.cancel(); gestureEnd?.cancel()
+            onFollowChanged?(false)
+        }
+        func settleGesture() {
+            gestureEnd?.cancel()
+            let item = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.gestureActive = false
+                let follow = self.atBottom
+                self.manualPause = false; self.following = follow
+                self.onFollowChanged?(follow)
+            }
+            gestureEnd = item
+            DispatchQueue.main.asyncAfter(deadline: .now()+0.2, execute: item)
+        }
+        private var atBottom: Bool {
+            guard let scroll, let document else { return false }
+            let visible = scroll.documentVisibleRect
+            let distance = document.isFlipped ? document.bounds.maxY-visible.maxY : visible.minY-document.bounds.minY
+            return distance <= 36
+        }
+        private func documentChanged() {
+            guard let document, document.frame.size != documentSize else { return }
+            documentSize = document.frame.size
+            schedule()
+        }
+        private func schedule() {
+            pending?.cancel()
+            guard following, !gestureActive, corrections > 0 else { return }
+            let item = DispatchWorkItem { [weak self] in self?.followBottom() }
+            pending = item
+            DispatchQueue.main.asyncAfter(deadline: .now()+0.04, execute: item)
+        }
+        private func followBottom() {
+            guard following, !gestureActive, corrections > 0, let scroll, let document else { return }
+            let clip = scroll.contentView
+            let y = document.isFlipped ? max(document.bounds.minY, document.bounds.maxY-clip.bounds.height) : document.bounds.minY
+            guard y.isFinite, abs(clip.bounds.minY-y) > 1 else { return }
+            corrections -= 1
+            clip.scroll(to: NSPoint(x: clip.bounds.minX, y: y))
+            scroll.reflectScrolledClipView(clip)
+        }
+        func detach() {
+            pending?.cancel(); gestureEnd?.cancel()
+            tokens.forEach(NotificationCenter.default.removeObserver); tokens.removeAll()
+            if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor) }
+            wheelMonitor = nil; scroll = nil; document = nil
+        }
+        deinit { detach() }
     }
 }
 
 struct CaptionScroll<Content: View>: View {
-    @StateObject private var requests = CaptionScrollRequests()
     @Binding var followsLatest: Bool
     let captions: [Caption]
     @ViewBuilder var content: Content
-    private let end = "caption-scroll-end"
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(spacing: 0) {
-                    content
-                    Color.clear.frame(height: 1).id(end)
-                }.background(CaptionScrollObserver { follow in
-                    if followsLatest != follow { followsLatest = follow }
-                })
-            }
-            .onAppear { if followsLatest { scrollAfterLayout(proxy) } }
-            .onChange(of: captions) { if followsLatest { scrollAfterLayout(proxy) } }
-            .onChange(of: followsLatest) {
-                if followsLatest { scrollAfterLayout(proxy) } else { requests.cancel() }
-            }
-            .background(GeometryReader { geometry in
-                Color.clear.onChange(of: geometry.size) { if followsLatest { scrollAfterLayout(proxy) } }
+        ScrollView {
+            content.background(CaptionScrollObserver(followsLatest: followsLatest, captions: captions) { follow in
+                if followsLatest != follow { followsLatest = follow }
             })
-            .onDisappear { requests.cancel() }
         }
-    }
-
-    private func scrollAfterLayout(_ proxy: ScrollViewProxy) {
-        requests.schedule { [end] in proxy.scrollTo(end, anchor: .bottom) }
     }
 }
 

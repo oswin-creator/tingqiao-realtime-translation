@@ -50,6 +50,16 @@ extension EnvironmentValues {
 }
 
 struct MainView: View {
+    let model: AppModel
+    var body: some View {
+        DeferredWindowLayout(background: NSColor(Palette.canvas)) {
+            WorkspaceView(model: model)
+        }.frame(minWidth: 1000, maxWidth: .infinity, minHeight: 640, maxHeight: .infinity)
+            .preferredColorScheme(.light)
+    }
+}
+
+private struct WorkspaceView: View {
     @ObservedObject var model: AppModel
     var body: some View {
         GeometryReader { geometry in
@@ -123,6 +133,7 @@ struct MainView: View {
             Text(model.status).font(.system(size: 11)).lineLimit(1)
             Spacer()
             if model.pendingCount > 0 { Text("\(model.pendingCount) 段待处理").font(.system(size: 11)).foregroundStyle(Palette.accent) }
+            AppUpdateButton(model: model, updates: model.appUpdates)
             Text("听桥 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")").font(.system(size: 11)).foregroundStyle(Palette.muted)
         }.foregroundStyle(Palette.muted).padding(.horizontal, layout.padding + 4).padding(.vertical, 8 + 5 * layout.density).background(.white.opacity(0.65))
     }
@@ -384,12 +395,7 @@ struct MeetingView: View {
     }
     private var controlBar: some View {
         HStack(spacing: 12 + 3 * layout.density) {
-            HStack(alignment: .center, spacing: 2 + layout.density) {
-                ForEach(0..<18) { index in
-                    RoundedRectangle(cornerRadius: 2).fill(model.isRunning ? Palette.accent.opacity(Double(index) < model.level * 18 + 1 ? 0.8 : 0.12) : Palette.line)
-                        .frame(width: 2 + layout.density, height: CGFloat([9, 14, 21, 14, 25, 33, 18, 26, 15, 22, 31, 20, 14, 24, 16, 10, 17, 8][index]) * (0.7 + 0.3 * layout.density))
-                }
-            }.frame(height: 24 + 10 * layout.density)
+            AudioLevelMeter(presentation: model.audioLevel, running: model.isRunning, density: layout.density)
             VStack(alignment: .leading, spacing: 4) {
                 Text(model.isReconnecting ? "正在恢复声音连接" : model.isRunning ? "正在聆听" : "准备开始会议")
                     .font(.system(size: 12, weight: .medium)).lineLimit(1)
@@ -416,6 +422,22 @@ struct MeetingView: View {
     }
     private var sampleCaptions: [Caption] {
         [Caption(id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, date: Date(), original: "Let's start with a quick overview of the project.", translated: "我们先来快速了解一下项目的整体情况。"), Caption(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!, date: Date(), original: "이번 주에는 사용자 피드백을 중심으로 논의하겠습니다.", translated: "这周我们将围绕用户反馈展开讨论。"), Caption(id: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!, date: Date(), original: "We want to make the experience simpler for everyone.", translated: "我们希望让每个人都能更轻松地使用。")]
+    }
+}
+
+struct AudioLevelMeter: View {
+    @ObservedObject var presentation: AudioLevelPresentation
+    var running: Bool
+    var density: CGFloat
+    private let heights = [9,14,21,14,25,33,18,26,15,22,31,20,14,24,16,10,17,8]
+    var body: some View {
+        HStack(spacing: 2+density) {
+            ForEach(heights.indices, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(running ? Palette.accent.opacity(Double(index) < presentation.value*18+1 ? 0.8 : 0.12) : Palette.line)
+                    .frame(width: 2+density, height: CGFloat(heights[index])*(0.7+0.3*density))
+            }
+        }.frame(height: 24+10*density)
     }
 }
 

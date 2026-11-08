@@ -36,3 +36,10 @@ xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_
 
 xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_dir/build/module-cache" "$project_dir/Sources/Models.swift" "$project_dir/Sources/LocalModels.swift" "$project_dir/Sources/WhisperEngine.swift" "$project_dir/Tests/KomixVocabularyTests.swift" -o "$project_dir/build/tests/KomixVocabularyTests"
 (cd "$project_dir" && build/tests/KomixVocabularyTests)
+
+xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_dir/build/module-cache" "${sources[@]}" "$project_dir/Tests/ScrollRecoveryTests.swift" -o "$project_dir/build/tests/ScrollRecoveryTests"
+"$project_dir/build/tests/ScrollRecoveryTests"
+xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_dir/build/module-cache" "$project_dir/Sources/Models.swift" "$project_dir/Sources/LocalModels.swift" "$project_dir/Sources/WhisperEngine.swift" "$project_dir/Sources/ModelDownloader.swift" "$project_dir/Sources/UpdateInstallation.swift" "$project_dir/Sources/AppUpdates.swift" "$project_dir/Tests/AppUpdateTests.swift" -o "$project_dir/build/tests/AppUpdateTests"
+"$project_dir/build/tests/AppUpdateTests"
+xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_dir/build/module-cache" "$project_dir/Sources/DeferredWindowLayout.swift" "$project_dir/Tests/WindowResizeTests.swift" -o "$project_dir/build/tests/WindowResizeTests"
+"$project_dir/build/tests/WindowResizeTests"
