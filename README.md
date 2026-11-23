@@ -37,7 +37,7 @@
 | **Context that stays in context** | Optionally send the preceding 1–6 segments to the translation model. Only the current segment becomes its subtitle. |
 | **Captions where you need them** | A resizable desktop overlay with font, opacity, pinning, history scrolling, and follow-latest controls. Android receives captions over Wi-Fi or BLE. |
 | **A reply when you ask** | Use five minutes of background to answer all questions in the latest 15 segments, or explain those 15 segments. Answers use the question’s language with a target-language translation. Set 1–3 sentences per answer; returned reasoning can collapse. |
-| **Keep the useful parts** | Local transcript history, individual deletion, clear/undo, and TXT export. Audio segments are saved before processing. |
+| **Keep the useful parts** | Local transcript history, individual deletion, clear/undo, and TXT export. Pending audio stays in memory, while confirmed captions are saved locally. |
 
 ### Available languages
 
@@ -83,9 +83,9 @@ In online mode, TingQiao reads playback audio through ScreenCaptureKit and leave
 
 | Platform | Download | Requirements |
 | --- | --- | --- |
-| Mac | [TingQiao 0.2.31 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.31/TingQiao-macOS-arm64-0.2.31.dmg) | Apple silicon, macOS 14+ |
-| Android companion | [TingQiao Captions 0.3.2 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.31/TingQiao-Captions-Android-0.3.2.apk) | Android 8+ |
-| Integrity | [SHA-256 checksums](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.31/SHA256SUMS.txt) | Verify downloaded files |
+| Mac | [TingQiao 0.2.45 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.45/TingQiao-macOS-arm64-0.2.45.dmg) | Apple silicon, macOS 14+ |
+| Android companion | [TingQiao Captions 0.3.4 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.45/TingQiao-Captions-Android-0.3.4.apk) | Android 8+ |
+| Integrity | [SHA-256 checksums](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.45/SHA256SUMS.txt) | Verify downloaded files |
 
 Open the DMG and drag TingQiao to Applications. Install the APK on Android, or scan the Mac's Wi-Fi QR code with a phone camera and read captions directly in the browser. Mac and phone must share the same Wi-Fi for browser access.
 
@@ -93,14 +93,14 @@ The Mac preview uses a stable self-signed release identity and is not Apple-nota
 
 Local ASR weights are downloaded separately from the sources shown in settings. Each model can be removed individually.
 
-## What changed in 0.2.31
+## What changed in 0.2.45
 
-- Reduced workspace layout work during meter updates and manual caption scrolling.
-- Main and floating windows keep their content dimensions during edge dragging, then reflow on release.
-- **Check for updates** beside the version checks GitHub Releases, verifies the installer and signing identity, and installs when capture and other active work have ended.
-- Stable self-signed release identity. The first upgrade from older ad-hoc builds may require audio permissions again; permission retention remains subject to macOS.
+- Incremental SQLite saves and in-memory recognition audio reduce disk writes.
+- Local headphone playback with MeloTTS and Qwen3-TTS, an independent volume slider, and highlighting for the segment being read.
+- Android 0.3.4 uses denser captions, offers a connection check, and polls for captions more often over Wi-Fi while translating.
+- [Release notes](docs/RELEASE-0.2.45.md).
 
-## Recognition models · 0.2.31
+## Recognition models · 0.2.45
 
 | Engine | Download | Installed | Language |
 | --- | --- | --- | --- |
@@ -112,7 +112,7 @@ Local ASR weights are downloaded separately from the sources shown in settings. 
 
 Model weights are not included in the installer. Each download has an installation notice, source link, progress, checksum validation, and an individual removal action. KomixV2 preserves byte-token encoding; existing affected files are repaired on first use without downloading the weights again.
 
-Confirmed endings submit after about 0.7 seconds of silence, other endings after about 1.5 seconds. Continuous speech seeks a pause from 7 seconds, with a 10-second cap. Forced cuts carry 1.5 seconds into the next segment. Repetition checks preserve a usable preview and allow one clean-audio retry. [Release notes](docs/RELEASE-0.2.31.md).
+Confirmed endings submit after about 0.7 seconds of silence, other endings after about 1.5 seconds. Continuous speech seeks a pause from 7 seconds, with a 10-second cap. Forced cuts carry 1.5 seconds into the next segment. Repetition checks preserve a usable preview and allow one clean-audio retry. [Release notes](docs/RELEASE-0.2.45.md).
 
 ## Settings and terminology
 
@@ -126,7 +126,7 @@ Term hints augment Index and custom translation requests, not Whisper transcript
 
 ## Build from source
 
-The repository includes **Mac 0.2.31** and **Android 0.3.2** sources. Build output, Whisper recognition weights, credentials, and signing keys are excluded. The small licensed Silero detector and public Wikidata snapshot are included.
+The repository includes **Mac 0.2.45** and **Android 0.3.4** sources. Build output, Whisper recognition weights, credentials, and signing keys are excluded. The small licensed Silero detector and public Wikidata snapshot are included.
 
 ### Mac
 
@@ -154,10 +154,11 @@ Build on macOS with JDK 17, Android SDK Platform 35, and Build Tools 36.0.0. The
 
 ~~~sh
 export ANDROID_SDK_ROOT="$HOME/Library/Android/sdk"
+zsh scripts/fetch-android-deps.sh
 zsh android/build.sh
 ~~~
 
-The build fetches ZXing Core 3.5.3 from Maven Central and verifies its SHA-256. Output is **android/build/听桥字幕.apk**. A local preview keystore is generated in the ignored build directory. The conventional preview password in the script is for this generated development key. Keep your own distribution signing key private.
+The dependency script fetches ZXing Core 3.5.3 from Maven Central and verifies its SHA-256. Output is **android/build/听桥字幕.apk**. A local preview keystore is generated in the ignored build directory. The conventional preview password in the script is for this generated development key. Keep your own distribution signing key private.
 
 ### Tests
 
@@ -175,7 +176,7 @@ See [development notes](docs/DEVELOPMENT.md) for the source map, dependency vers
 - Apple local recognition and Whisper process audio on the Mac. Apple online recognition sends audio to Apple when selected.
 - Translation sends confirmed text to the selected provider. Enabled context also sends preceding text and available translations.
 - The assistant sends the latest 15 confirmed segments plus up to five minutes of preceding meeting context to its separately configured provider, only when requested.
-- Transcripts and pending audio stay in **~/Library/Application Support/TingQiao/**. Successfully recognized audio is removed after text is saved.
+- Transcripts are saved incrementally in SQLite under **~/Library/Application Support/TingQiao/**. New pending audio stays in memory until recognition succeeds and is lost if the app exits.
 - Wi-Fi pairing uses a bearer credential over **local HTTP**. Use a trusted network. BLE uses encrypted GATT characteristics and application pairing credentials.
 - This public snapshot excludes personal settings, local records, pairing data, private-device reports, screenshots of real conversations, and signing output.
 
@@ -187,7 +188,7 @@ This is a preview project. Recognition can miss words, split sentences poorly, o
 
 Google's keyless trial endpoint and Index's public service can change or rate-limit. Custom model quality, supported language pairs, API compatibility, and fees depend on the provider. Actual latency includes segmentation, recognition, network, and translation time.
 
-There is currently no Windows client, iOS companion, speaker diarization, or spoken interpretation. See [validation notes](docs/DEVELOPMENT.md#validation) for test coverage.
+There is currently no Windows client, iOS companion, speaker diarization. See [validation notes](docs/DEVELOPMENT.md#validation) for test coverage.
 
 ## Contributing and license
 

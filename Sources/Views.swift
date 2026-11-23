@@ -72,6 +72,7 @@ private struct WorkspaceView: View {
                 Group {
                     switch model.section {
                     case "手机字幕": PhoneSettingsView(model: model)
+                    case "语音播报": SpokenSettingsView(model: model, playback: model.spoken, downloads: model.spoken.downloads)
                     case "翻译设置": TranslationSettingsView(model: model)
                     case "问答大模型设置": AssistantSettingsView(model: model)
                     case "会议记录": HistoryView(model: model)
@@ -121,6 +122,7 @@ private struct WorkspaceView: View {
     private var subtitle: String {
         switch model.section {
         case "手机字幕": return "把字幕带到手边，专注眼前的交流。"
+        case "语音播报": return "选一个声音，让译文在耳机里跟上对话。"
         case "翻译设置": return "选择适合你的语言和翻译服务。"
         case "问答大模型设置": return "设置会议助手的接口与回复长度。"
         case "会议记录": return "原文与译文，随时回看。"
@@ -133,6 +135,9 @@ private struct WorkspaceView: View {
             Text(model.status).font(.system(size: 11)).lineLimit(1)
             Spacer()
             if model.pendingCount > 0 { Text("\(model.pendingCount) 段待处理").font(.system(size: 11)).foregroundStyle(Palette.accent) }
+            Button { model.exportDiagnostics() } label: {
+                Image(systemName: "stethoscope").font(.system(size: 11))
+            }.buttonStyle(.plain).help("导出故障记录").accessibilityLabel("导出故障记录")
             AppUpdateButton(model: model, updates: model.appUpdates)
             Text("听桥 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")").font(.system(size: 11)).foregroundStyle(Palette.muted)
         }.foregroundStyle(Palette.muted).padding(.horizontal, layout.padding + 4).padding(.vertical, 8 + 5 * layout.density).background(.white.opacity(0.65))
@@ -190,7 +195,7 @@ struct MeetingDomainSelectionView: View {
 struct Sidebar: View {
     @ObservedObject var model: AppModel
     @Environment(\.workspaceLayout) private var layout
-    let items = [("会议翻译", "waveform"), ("手机字幕", "iphone"), ("会议记录", "text.book.closed"), ("翻译设置", "slider.horizontal.3"), ("问答大模型设置", "bubble.left.and.bubble.right")]
+    let items = [("会议翻译", "waveform"), ("手机字幕", "iphone"), ("语音播报", "headphones"), ("会议记录", "text.book.closed"), ("翻译设置", "slider.horizontal.3"), ("问答大模型设置", "bubble.left.and.bubble.right")]
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 11) {
@@ -289,13 +294,18 @@ struct MeetingView: View {
                 CaptionScroll(followsLatest: $model.mainFollowsLatest, captions: model.captions) {
                     LazyVStack(alignment: .leading, spacing: 15) {
                         ForEach(model.stylePreview && model.captions.isEmpty ? sampleCaptions : model.captions) { caption in
-                            CaptionCard(caption: caption, showOriginal: model.settings.showOriginal, fontSize: model.settings.fontSize)
+                            SpokenCaptionCard(caption: caption, showOriginal: model.settings.showOriginal, fontSize: model.settings.fontSize, reading: model.spoken.reading)
                                 .contextMenu { Button("删除这条记录") { model.removeRecords([caption.id]) } }
                         }
                     }
                 }
             }
-            HStack(spacing: 7) { Image(systemName: "info.circle"); Text(model.settings.mode == .online ? "只读取播放声音，麦克风交给会议软件。" : "请将麦克风靠近发言者，识别更准确。") }.font(.system(size: 10)).foregroundStyle(Palette.muted)
+            SpokenMeetingStatus(playback: model.spoken) {
+                Label(model.settings.mode == .online ? "只读取播放声音，麦克风交给会议软件。" : "请将麦克风靠近发言者，识别更准确。",
+                      systemImage: "info.circle").font(.system(size: 10)).foregroundStyle(Palette.muted)
+            } openSettings: {
+                model.section = "语音播报"
+            }
         }
     }
     private func emptyView(icon: String, title: String, detail: String) -> some View {
@@ -402,6 +412,7 @@ struct MeetingView: View {
                 Text(model.settings.mode == .online ? "系统声音" : "麦克风收音").font(.system(size: 10)).foregroundStyle(Palette.muted)
             }
             Spacer(minLength: 4)
+            SpokenMeetingToggle(playback: model.spoken, change: model.setSpokenEnabled)
             Toggle("字幕悬浮窗", isOn: Binding(get: { model.floatingVisible }, set: { model.setFloating($0) }))
                 .toggleStyle(.switch).controlSize(.mini).font(.system(size: 11)).foregroundStyle(Palette.muted)
                 .fixedSize().padding(.trailing, 6)
@@ -445,12 +456,22 @@ struct CaptionCard: View {
     var caption: Caption
     var showOriginal: Bool
     var fontSize: Double
+    var spokenRange: NSRange? = nil
+    private var displayText: AttributedString {
+        let text = NSMutableAttributedString(string: caption.displayText)
+        if !caption.translated.isEmpty, let range = spokenRange,
+           range.location != NSNotFound, range.location >= 0, range.length > 0,
+           range.location <= text.length, range.length <= text.length - range.location {
+            text.addAttribute(.backgroundColor, value: NSColor(calibratedRed: 1, green: 0.85, blue: 0.25, alpha: 0.85), range: range)
+        }
+        return AttributedString(text)
+    }
     var body: some View {
         SoftCard(padding: 20) {
             VStack(alignment: .leading, spacing: 11) {
                 HStack(spacing: 7) { Circle().fill(Palette.accent.opacity(0.45)).frame(width: 5, height: 5); Text(caption.date.formatted(date: .omitted, time: .standard)).font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.muted) }
                 if !caption.original.isEmpty && (showOriginal || caption.isDraft == true || caption.translated.isEmpty) { Text(caption.original).font(.system(size: 13)).foregroundStyle(Palette.muted).lineSpacing(5).textSelection(.enabled) }
-                Text(caption.displayText).font(.system(size: fontSize, weight: .medium)).foregroundStyle(caption.translated.isEmpty ? Palette.muted : Palette.ink).lineSpacing(7).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                Text(displayText).font(.system(size: fontSize, weight: .medium)).foregroundStyle(caption.translated.isEmpty ? Palette.muted : Palette.ink).lineSpacing(7).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -491,7 +512,7 @@ private enum TranslationSettingsTab: String, CaseIterable {
     }
 }
 
-private struct SettingsPanel<Content: View>: View {
+struct SettingsPanel<Content: View>: View {
     var title: String
     var subtitle: String
     @ViewBuilder var content: Content
@@ -508,7 +529,7 @@ private struct SettingsPanel<Content: View>: View {
     }
 }
 
-private struct SettingsRow<Content: View>: View {
+struct SettingsRow<Content: View>: View {
     var title: String
     var detail: String = ""
     @ViewBuilder var content: Content
@@ -911,6 +932,7 @@ struct PhoneSettingsView: View {
 struct HistoryView: View {
     @ObservedObject var model: AppModel
     var body: some View {
+        let records = model.visibleJobs.filter { $0.stage != .done || !$0.original.isEmpty }
         VStack(alignment: .leading, spacing: 20) {
             HStack {
                 Text("共 \(model.visibleJobs.filter { !$0.original.isEmpty }.count) 段对话 · \(model.pendingCount) 段待处理").foregroundStyle(Palette.muted)
@@ -922,7 +944,7 @@ struct HistoryView: View {
             if !model.notice.isEmpty { NoticeBar(text: model.notice) { model.notice = "" } }
             ScrollView {
                 LazyVStack(spacing: 13) {
-                    ForEach(model.visibleJobs.suffix(300).reversed()) { job in
+                    ForEach(records.suffix(300).reversed()) { job in
                         SoftCard(padding: 18) {
                             VStack(alignment: .leading, spacing: 9) {
                                 HStack { Text(job.created.formatted(date: .abbreviated, time: .standard)); Spacer(); Text(job.stage == .done ? "已完成" : job.stage == .blocked ? "需检查设置" : job.stage == .recognize ? "待识别" : "待翻译") }.font(.system(size: 10)).foregroundStyle(Palette.muted)
@@ -932,7 +954,7 @@ struct HistoryView: View {
                             }
                         }.contextMenu { Button("删除这条记录") { model.removeRecords([job.id]) } }
                     }
-                    if model.visibleJobs.isEmpty { Text("还没有会议记录，开始一场会议后会自动保存。").foregroundStyle(Palette.muted).padding(80) }
+                    if records.isEmpty { Text("还没有会议记录，开始一场会议后会自动保存。").foregroundStyle(Palette.muted).padding(80) }
                 }
             }
             Text("显示最近 300 段；导出包含全部未清除的记录。").font(.system(size: 10)).foregroundStyle(Palette.muted)

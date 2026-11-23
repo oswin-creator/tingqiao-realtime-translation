@@ -5,6 +5,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <cstdint>
+#include <iostream>
 static unsigned u16(const unsigned char* p){return p[0]|(p[1]<<8);}
 static unsigned u32(const unsigned char* p){return u16(p)|(u16(p+2)<<16);}
 static std::vector<float> audio(const std::string& path){
@@ -25,5 +26,15 @@ static std::vector<float> recognition_audio(const std::string& path, int skip) {
     auto samples = audio(path);
     if (skip < 0 || skip > (int)samples.size()) throw std::runtime_error("invalid audio offset");
     if (skip > 0) samples.erase(samples.begin(), samples.begin() + skip);
+    return samples;
+}
+
+static std::vector<float> recognition_pcm(std::istream& input, size_t bytes, int skip) {
+    if (bytes == 0 || bytes > 2 * 1024 * 1024 || bytes % 2) throw std::runtime_error("invalid pcm length");
+    std::vector<unsigned char> pcm(bytes);
+    if (!input.read(reinterpret_cast<char*>(pcm.data()), bytes)) throw std::runtime_error("truncated pcm");
+    if (skip < 0 || static_cast<size_t>(skip) > bytes / 2) throw std::runtime_error("invalid audio offset");
+    std::vector<float> samples(bytes / 2 - skip);
+    for (size_t i = 0; i < samples.size(); ++i) samples[i] = static_cast<int16_t>(u16(pcm.data() + 2 * (i + skip))) / 32768.f;
     return samples;
 }

@@ -25,15 +25,18 @@ public class MainActivity extends Activity {
     private String pairing;
     private BleCaptionClient ble;
     private boolean blePage=false, bleScanPage=false, followBle=true, bleOriginal=true;
-    private int bleFont=24;
+    private static final int[] CAPTION_SIZES = {16, 20, 24, 28, 34, 40};
+    private int captionSize = 24;
     private TextView bleStatus;
     private EditText bleCode;
-    private LinearLayout bleDevices, bleRows, blePageLayout;
+    private LinearLayout bleDevices, bleRows;
     private ScrollView bleScroll;
     private AssistantPanel assistantPanel;
     private String assistantRequestId = "";
     private final Set<String> foundAddresses=new HashSet<>();
     private final LinkedHashMap<String,JSONObject> bleCaptions=new LinkedHashMap<>();
+    private final Map<String,View> bleCards=new HashMap<>();
+    private final Map<String,String> bleCardContents=new HashMap<>();
     private final int INK = Color.rgb(36,43,66), MUTED = Color.rgb(133,140,164), ACCENT = Color.rgb(100,94,225), BG = Color.rgb(246,247,252);
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -42,6 +45,8 @@ public class MainActivity extends Activity {
         // Keep the display on while the companion is visible; release it when backgrounded.
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         pairing = getPreferences(MODE_PRIVATE).getString("pairing", "");
+        int savedCaptionSize = getPreferences(MODE_PRIVATE).getInt("captionSize", 24);
+        for (int size : CAPTION_SIZES) if (size == savedCaptionSize) captionSize = size;
         ble=new BleCaptionClient(this,new BleCaptionClient.Listener(){
             public void status(String value){if(bleStatus!=null)bleStatus.setText(value);}
             public void found(BluetoothDevice device,String name){addBleDevice(device,name);}
@@ -138,18 +143,89 @@ public class MainActivity extends Activity {
     private void addSpace(LinearLayout box,int value) { View view = new View(this); box.addView(view,new LinearLayout.LayoutParams(1,dp(value))); }
     private boolean valid(String value) { return PairingLink.valid(value); }
     private void showCaptions(String value) {
-        try { URI uri = new URI(value); origin = uri.getScheme()+"://"+uri.getHost()+":"+uri.getPort(); }catch(Exception error){return;}
+        if (!valid(value)) return;
+        String html;
+        try (java.io.InputStream input = getAssets().open("phone.html")) {
+            URI uri = new URI(value);
+            origin = uri.getScheme()+"://"+uri.getHost()+":"+uri.getPort();
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            byte[] buffer = new byte[4096];
+            for (int count; (count = input.read(buffer)) != -1;) bytes.write(buffer, 0, count);
+            html = bytes.toString("UTF-8").replace("const appToken='';", "const appToken='"+uri.getFragment()+"';");
+        } catch(Exception error) {
+            Toast.makeText(this,"无法打开字幕页面",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if(getCurrentFocus()!=null)((android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(getCurrentFocus().getWindowToken(),0);
         web = new WebView(this); web.setBackgroundColor(BG);
         web.getSettings().setJavaScriptEnabled(true); web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setAllowFileAccess(false); web.getSettings().setAllowContentAccess(false);
         web.getSettings().setMixedContentMode(android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         web.setWebViewClient(new WebViewClient(){
+            @Override public void onPageFinished(WebView view, String url) {
+                if (view == web) applyWiFiCaptionSize();
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                try { URI uri = new URI(request.getUrl().toString()); return !(uri.getScheme()+"://"+uri.getHost()+":"+uri.getPort()).equals(origin); } catch(Exception error){return true;}
+                return true;
             }
         });
-        setContentView(web); web.loadUrl(value);
+        LinearLayout page = column(0,0);
+        page.addView(captionHeader("Wi-Fi 字幕", () -> {
+            if (web != null) web.evaluateJavascript("checkConnection()", null);
+        }));
+        page.addView(web, new LinearLayout.LayoutParams(-1, 0, 1));
+        setContentView(page);
+        web.loadDataWithBaseURL(origin+"/", html, "text/html", "UTF-8", null);
     }
+    private LinearLayout captionHeader(String title, Runnable check) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(10),dp(3),dp(10),dp(3));
+        row.setBackgroundColor(BG);
+        TextView heading = text(title,15,INK,true);
+        heading.setSingleLine(true);
+        heading.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        row.addView(heading,new LinearLayout.LayoutParams(0,-2,1));
+        addCaptionTool(row,captionSizeButton(),65);
+        Button button = action("检查连接");
+        button.setOnClickListener(v -> check.run());
+        addCaptionTool(row,button,77);
+        return row;
+    }
+    private void addCaptionTool(LinearLayout row,Button button,int width) {
+        button.setTextSize(12);
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(width==0?0:dp(width),dp(38),width==0?1:0);
+        if(row.getChildCount()>0)params.leftMargin=dp(5);
+        row.addView(button,params);
+    }
+    private Button captionSizeButton() {
+        Button button = action("字号 " + captionSize);
+        button.setTextSize(12);
+        button.setContentDescription("字幕字号，当前 " + captionSize);
+        button.setOnClickListener(view -> {
+            PopupMenu menu = new PopupMenu(this, button);
+            for (int size : CAPTION_SIZES) menu.getMenu().add(1, size, size, size + (size == 24 ? " · 默认" : ""));
+            menu.getMenu().setGroupCheckable(1, true, true);
+            menu.getMenu().findItem(captionSize).setChecked(true);
+            menu.setOnMenuItemClickListener(item -> {
+                captionSize = item.getItemId();
+                getPreferences(MODE_PRIVATE).edit().putInt("captionSize", captionSize).apply();
+                button.setText("字号 " + captionSize);
+                button.setContentDescription("字幕字号，当前 " + captionSize);
+                if (web != null) applyWiFiCaptionSize();
+                else renderBluetooth();
+                return true;
+            });
+            menu.show();
+        });
+        return button;
+    }
+
+    private void applyWiFiCaptionSize() {
+        if (web == null) return;
+        web.evaluateJavascript("setCaptionSize("+captionSize+")", null);
+    }
+
     private Button action(String value){Button b=new Button(this);b.setText(value);b.setAllCaps(false);b.setTextColor(ACCENT);b.setTextSize(14);b.setMinWidth(0);b.setMinimumWidth(0);b.setPadding(dp(5),0,dp(5),0);b.setBackground(outlined(Color.rgb(248,247,255),11,Color.rgb(229,225,250)));b.setElevation(0);b.setStateListAnimator(null);return b;}
     private void showBluetooth(){
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
@@ -226,43 +302,44 @@ public class MainActivity extends Activity {
     private void showBluetoothCaptions(){
         if(getCurrentFocus()!=null)((android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(getCurrentFocus().getWindowToken(),0);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
-        bleScanPage=false;blePage=true;followBle=true;bleCaptions.clear();
-        LinearLayout page=new CaptionLayout(this);blePageLayout=page;page.setBackgroundColor(BG);
-        LinearLayout header=column(16,11);header.setBackgroundColor(BG);header.setElevation(dp(2));
-        LinearLayout heading = new LinearLayout(this);heading.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        LinearLayout title = column(0,0);identity(title,"听桥 · 随身字幕","蓝牙连接");heading.addView(title,new LinearLayout.LayoutParams(0,-2,1));
-        Button back=action("更换电脑");back.setTextSize(12);back.setOnClickListener(v->showBluetooth());heading.addView(back,new LinearLayout.LayoutParams(dp(78),dp(40)));
-        header.addView(heading);addSpace(header,8);bleStatus=text("正在连接…",12,MUTED,false);header.addView(bleStatus);
-        addSpace(header,9);header.addView(text("会议助手",11,MUTED,true));addSpace(header,4);
+        bleScanPage=false;blePage=true;followBle=true;bleCaptions.clear();bleCards.clear();bleCardContents.clear();
+        LinearLayout page=new CaptionLayout(this);page.setBackgroundColor(BG);
+        page.addView(captionHeader("蓝牙字幕", this::checkBluetooth));
+        LinearLayout header=column(10,3);header.setBackgroundColor(BG);header.setElevation(dp(1));
+        bleStatus=text("正在连接…",11,MUTED,false);
+        bleStatus.setIncludeFontPadding(false);
+        header.addView(bleStatus);
         LinearLayout actions=new LinearLayout(this);
-        Button original=action("原文开关");original.setOnClickListener(v->{bleOriginal=!bleOriginal;renderBluetooth();});actions.addView(original);
-        Button font=action("字号");font.setOnClickListener(v->{bleFont=bleFont==24?30:24;renderBluetooth();});actions.addView(font);
-        Button latest=action("回到最新 ↓");latest.setOnClickListener(v->{followBle=true;bleScroll.post(()->bleScroll.scrollTo(0,Math.max(0,bleRows.getHeight()-bleScroll.getHeight())));});actions.addView(latest);
-        for(int i=0;i<actions.getChildCount();i++){
-            Button button=(Button)actions.getChildAt(i);button.setTextSize(12);
-            LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,dp(42),1);
-            if(i>0)params.leftMargin=dp(7);
-            button.setLayoutParams(params);
-        }
-        LinearLayout assistantActions = new LinearLayout(this);
+        Button original=action(bleOriginal?"双语":"译文");
+        original.setOnClickListener(v->{bleOriginal=!bleOriginal;original.setText(bleOriginal?"双语":"译文");renderBluetooth();});
+        Button latest=action("最新 ↓");
+        latest.setOnClickListener(v->{followBle=true;bleScroll.post(()->bleScroll.scrollTo(0,Math.max(0,bleRows.getHeight()-bleScroll.getHeight())));});
         Button answer = action("帮我回答"), explain = action("解释刚才");
-        answer.setBackground(rounded(Color.rgb(235, 232, 255), 10));
-        explain.setBackground(rounded(Color.rgb(242, 240, 253), 10));
-        LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, dp(44), 1); left.rightMargin = dp(8);
-        assistantActions.addView(answer, left);
-        assistantActions.addView(explain, new LinearLayout.LayoutParams(0, dp(44), 1));
-        header.addView(assistantActions);
-        addSpace(header,9);header.addView(actions);page.addView(header,new LinearLayout.LayoutParams(-1,-2));
+        Button back = action("更换电脑");
+        back.setOnClickListener(v -> showBluetooth());
+        addCaptionTool(actions,original,0);addCaptionTool(actions,latest,0);
+        addCaptionTool(actions,answer,0);addCaptionTool(actions,explain,0);addCaptionTool(actions,back,0);
+        addSpace(header,4);header.addView(actions);page.addView(header,new LinearLayout.LayoutParams(-1,-2));
         answer.setOnClickListener(v -> askBluetoothAssistant(true));
         explain.setOnClickListener(v -> askBluetoothAssistant(false));
-        bleScroll=new ScrollView(this);bleScroll.setFillViewport(true);bleScroll.setFocusableInTouchMode(true);bleScroll.setDescendantFocusability(android.view.ViewGroup.FOCUS_BEFORE_DESCENDANTS);bleRows=new LinearLayout(this);bleRows.setOrientation(1);bleRows.setPadding(dp(16),dp(8),dp(16),dp(24));bleScroll.addView(bleRows);
-        bleScroll.setOnScrollChangeListener((View v,int x,int y,int oldX,int oldY)->{if(bleRows!=null)followBle=bleRows.getHeight()-(y+bleScroll.getHeight())<dp(100);});
+        bleScroll=new ScrollView(this);bleScroll.setFillViewport(true);bleScroll.setFocusableInTouchMode(true);bleScroll.setDescendantFocusability(android.view.ViewGroup.FOCUS_BEFORE_DESCENDANTS);bleRows=new LinearLayout(this);bleRows.setOrientation(1);bleRows.setPadding(dp(10),dp(5),dp(10),dp(6));bleScroll.addView(bleRows);
+        bleScroll.setOnScrollChangeListener((View v,int x,int y,int oldX,int oldY)->{if(bleRows!=null)followBle=bleRows.getHeight()-(y+bleScroll.getHeight())<dp(40);});
         page.addView(bleScroll,new LinearLayout.LayoutParams(-1,0,1));
         FrameLayout overlayHost = new FrameLayout(this);
         overlayHost.addView(page, new FrameLayout.LayoutParams(-1, -1));
         assistantPanel = new AssistantPanel(overlayHost);
         assistantRequestId = "";
         setContentView(overlayHost);renderBluetooth();
+    }
+    private void checkBluetooth() {
+        TextView status = bleStatus;
+        status.setText("正在检查蓝牙连接…");
+        ble.checkConnection(ok -> {
+            if (!blePage || bleStatus != status) return;
+            String result=ok?"蓝牙已连接 · 电脑已响应":"未收到电脑回应，请检查蓝牙字幕";
+            status.setText(result);
+            Toast.makeText(this,result,Toast.LENGTH_SHORT).show();
+        });
     }
 
     private void askBluetoothAssistant(boolean answer) {
@@ -298,16 +375,45 @@ public class MainActivity extends Activity {
     }
     private ArrayList<JSONObject> orderedCaptions(){ArrayList<JSONObject> list=new ArrayList<>(bleCaptions.values());Collections.sort(list,(a,b)->Double.compare(a.optDouble("date"),b.optDouble("date")));return list;}
     private void renderBluetooth(){
-        if(!blePage || bleRows==null)return;boolean follow=followBle;int previousY=bleScroll.getScrollY();blePageLayout.requestFocus();bleRows.removeAllViews();
+        if(!blePage || bleRows==null)return;
+        boolean follow=followBle;int previousY=bleScroll.getScrollY();
+        for(String id:new ArrayList<>(bleCards.keySet())){
+            if(!bleCaptions.containsKey(id)){bleRows.removeView(bleCards.remove(id));bleCardContents.remove(id);}
+        }
+        if(bleCards.isEmpty())bleRows.removeAllViews();
+        int index=0;
         for(JSONObject c:orderedCaptions()){
-            LinearLayout row=new LinearLayout(this);row.setOrientation(1);row.setPadding(dp(16),dp(14),dp(16),dp(16));row.setBackground(rounded(Color.WHITE,14));
-            Date date=new Date((long)((c.optDouble("date")+978307200)*1000));row.addView(text(android.text.format.DateFormat.format("HH:mm:ss",date).toString(),10,MUTED,false));
-            if(bleOriginal || c.optBoolean("isDraft")){addSpace(row,7);row.addView(text(c.optString("original"),14,MUTED,false));}
-            addSpace(row,7);String translated=c.optString("translated");TextView zh=text(c.optBoolean("isDraft")?"正在听 · 确认整句后翻译":translated.isEmpty()?"正在翻译…":translated,bleFont,INK,false);zh.setTextIsSelectable(true);row.addView(zh);
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(12);bleRows.addView(row,lp);
+            String id=c.optString("id"), contents=captionSize+":"+bleOriginal+":"+c;
+            View row=bleCards.get(id);
+            if(!contents.equals(bleCardContents.get(id))){
+                if(row!=null)bleRows.removeView(row);
+                row=captionCard(c);bleCards.put(id,row);bleCardContents.put(id,contents);
+            }else if(bleRows.indexOfChild(row)!=index)bleRows.removeView(row);
+            if(row.getParent()==null)bleRows.addView(row,index);
+            index++;
         }
         if(bleCaptions.isEmpty()){TextView empty=text("等待下一句对话…",18,MUTED,false);empty.setPadding(dp(16),dp(70),dp(16),dp(70));bleRows.addView(empty);}
         bleScroll.post(()->{if(follow)bleScroll.scrollTo(0,Math.max(0,bleRows.getHeight()-bleScroll.getHeight()));else bleScroll.scrollTo(0,previousY);followBle=follow;});
+    }
+    private View captionCard(JSONObject caption){
+        LinearLayout row=column(10,5);row.setBackground(rounded(Color.WHITE,10));
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);
+        params.bottomMargin=dp(4);row.setLayoutParams(params);
+        Date date=new Date((long)((caption.optDouble("date")+978307200)*1000));
+        addCaptionLine(row,android.text.format.DateFormat.format("HH:mm:ss",date).toString(),10,MUTED,false);
+        String original=caption.optString("original"),translated=caption.optString("translated");
+        boolean draft=caption.optBoolean("isDraft");
+        if((bleOriginal || draft) && !original.isEmpty())addCaptionLine(row,original,Math.max(11,Math.round(captionSize*.58f)),MUTED,false);
+        addCaptionLine(row,draft?"正在听 · 确认整句后翻译":translated.isEmpty()?"正在翻译…":translated,captionSize,INK,true);
+        return row;
+    }
+    private void addCaptionLine(LinearLayout row,String value,int size,int color,boolean selectable){
+        TextView line=text(value,size,color,false);
+        line.setIncludeFontPadding(false);
+        line.setTextIsSelectable(selectable);
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);
+        if(row.getChildCount()>0)params.topMargin=dp(2);
+        row.addView(line,params);
     }
     @Override public void onBackPressed(){ if(web!=null || blePage || bleScanPage)showPairing();else super.onBackPressed(); }
     @Override protected void onPause(){super.onPause();if(web!=null)web.onPause();}

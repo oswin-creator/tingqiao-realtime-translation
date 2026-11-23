@@ -12,7 +12,7 @@
 | Wi-Fi / BLE captions | Recent captions, status, requested assistant replies | Paired phones |
 | Model installation | Model download | Hugging Face for local models, Apple for system resources |
 
-The app stores transcript metadata and pending audio in ~/Library/Application Support/TingQiao/. Segments are saved before recognition. Audio is removed after recognition succeeds and text is saved. Unfinished segments remain for recovery. Clearing history supports undo until permanently deleted.
+The app saves confirmed text incrementally in SQLite under ~/Library/Application Support/TingQiao/. New pending audio stays in memory until recognition succeeds. Unrecognized audio is lost when the app exits. Existing records migrate from jobs.json, which remains as a backup. Clearing history supports undo until permanently deleted.
 
 API keys use the macOS Keychain. The phone protocols do not expose keys or raw meeting audio. App settings use local UserDefaults. Bluetooth credentials are stored on each paired device.
 

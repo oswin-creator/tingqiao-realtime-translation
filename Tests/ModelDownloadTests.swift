@@ -8,7 +8,7 @@ final class DownloadEvents: @unchecked Sendable {
 }
 @main struct ModelDownloadTests {
     static func main() async throws {
-        let port = try String(contentsOfFile: CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "build/tests/download-progress-port", encoding: .utf8)
+        let port = try String(contentsOfFile: "build/tests/download-progress-port-0228", encoding: .utf8)
         for path in ["known", "unknown"] {
             let events = DownloadEvents()
             let worker = ModelDownloader(expectedBytes: 2*1024*1024) { events.append($0) }

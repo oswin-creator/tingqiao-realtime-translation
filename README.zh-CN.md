@@ -38,7 +38,7 @@
 | **桌面悬浮字幕** | 多句历史滚动、回到最新、透明度、始终置顶、独立字号和窗口缩放。 |
 | **手机随身字幕** | Wi-Fi 扫码或蓝牙直连，支持记住多台电脑的配对。 |
 | **点一下再问答** | 参考最近五分钟背景，逐个回答最近 15 段的问题，或解释这 15 段。回答使用提问语言并附目标语言译文；每题可设 1–3 句，思考过程可折叠。 |
-| **整理会议记录** | 本机历史、单条删除、清空与撤销、TXT 导出。待处理音频先保存，再排队识别。 |
+| **整理会议记录** | 本机历史、单条删除、清空与撤销、TXT 导出。待处理音频暂存在内存中，确认后的字幕保存在本机。 |
 
 ### 支持的语言选项
 
@@ -84,9 +84,9 @@ Apple 识别范围取决于系统和语言资源。在「翻译设置 → 语音
 
 | 平台 | 下载文件 | 系统要求 |
 | --- | --- | --- |
-| Mac | [听桥 0.2.31 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.31/TingQiao-macOS-arm64-0.2.31.dmg) | Apple 芯片，macOS 14+ |
-| 安卓随身字幕 | [听桥字幕 0.3.2 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.31/TingQiao-Captions-Android-0.3.2.apk) | Android 8+ |
-| 文件校验 | [SHA-256 校验值](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.31/SHA256SUMS.txt) | 可用于核对下载完整性 |
+| Mac | [听桥 0.2.45 · DMG](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.45/TingQiao-macOS-arm64-0.2.45.dmg) | Apple 芯片，macOS 14+ |
+| 安卓随身字幕 | [听桥字幕 0.3.4 · APK](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.45/TingQiao-Captions-Android-0.3.4.apk) | Android 8+ |
+| 文件校验 | [SHA-256 校验值](https://github.com/oswin-creator/tingqiao-realtime-translation/releases/download/v0.2.45/SHA256SUMS.txt) | 可用于核对下载完整性 |
 
 Mac 打开 DMG，把听桥拖进「应用程序」。安卓下载 APK 安装。也可以让手机与电脑连接同一个 Wi-Fi，用手机相机扫描 Mac 二维码，在浏览器直接看字幕，无需下载 App。
 
@@ -94,14 +94,14 @@ Mac 测试包使用固定自签名证书，尚未经过 Apple 公证，首次打
 
 本地识别模型在 App 中按需单独下载，每个模型都可单独移除。
 
-## 0.2.31 更新
+## 0.2.45 更新
 
-- 音量条独立刷新，手动上翻暂停字幕跟随，减少主页面重复布局。
-- 主窗口和悬浮窗拖动边缘时保持内容尺寸，松开后统一排版，字幕继续更新。
-- 版本号旁新增「检查更新」，从 GitHub 获取正式版本，校验安装包与签名后，在收音和当前任务结束时安装并重开。
-- 发布包采用固定自签名。从旧临时签名版本首次升级时，可能需要重新授予录音权限；后续权限保留仍由 macOS 决定。
+- 原文和译文增量写入 SQLite，待识别音频放在内存里，减少写盘。
+- 支持 MeloTTS 和 Qwen3-TTS 本机耳机播报，可单独调节音量，当前播报的小句用黄色标出。
+- 安卓 0.3.4 缩小字幕间距，加入连接检查，并提高翻译时 Wi-Fi 字幕刷新频率。
+- [查看发布说明](docs/RELEASE-0.2.45.md)。
 
-## 识别模型 · 0.2.31
+## 识别模型 · 0.2.45
 
 | 引擎 | 下载大小 | 安装后 | 语言 |
 | --- | --- | --- | --- |
@@ -113,7 +113,7 @@ Mac 测试包使用固定自签名证书，尚未经过 Apple 公证，首次打
 
 模型权重不放进安装包。下载前显示安装提示和来源，下载时显示进度，完成后校验；不用的模型可逐个移除。KomixV2 已修复韩语编码，旧文件首次使用时自动修复，无需重新下载权重。
 
-句尾明确时停顿约 0.7 秒提交，其他约 1.5 秒；连续发言约 7 秒起寻找自然停顿，最长 10 秒。强切后下一段附带前面 1.5 秒声音。异常重复先保留正常临时字幕，最多用本段音频复核一次。[查看更新说明](docs/RELEASE-0.2.31.md)。
+句尾明确时停顿约 0.7 秒提交，其他约 1.5 秒；连续发言约 7 秒起寻找自然停顿，最长 10 秒。强切后下一段附带前面 1.5 秒声音。异常重复先保留正常临时字幕，最多用本段音频复核一次。[查看更新说明](docs/RELEASE-0.2.45.md)。
 
 ## 设置与内置词库
 
@@ -127,7 +127,7 @@ Mac 测试包使用固定自签名证书，尚未经过 Apple 公证，首次打
 
 ## 从源码构建
 
-本仓库包含 **Mac 0.2.31** 和 **Android 0.3.2** 源码。
+本仓库包含 **Mac 0.2.45** 和 **Android 0.3.4** 源码。
 
 ### Mac
 
@@ -155,10 +155,11 @@ open build/听桥.app
 
 ~~~sh
 export ANDROID_SDK_ROOT="$HOME/Library/Android/sdk"
+zsh scripts/fetch-android-deps.sh
 zsh android/build.sh
 ~~~
 
-脚本会从 Maven Central 获取 ZXing Core 3.5.3 并校验 SHA-256。输出为 **android/build/听桥字幕.apk**。预览签名密钥在忽略的构建目录里生成，脚本里的通用开发密码仅供该测试密钥使用。正式分发时请保管好自己的签名密钥。
+依赖脚本会从 Maven Central 获取 ZXing Core 3.5.3 并校验 SHA-256。输出为 **android/build/听桥字幕.apk**。预览签名密钥在忽略的构建目录里生成，脚本里的通用开发密码仅供该测试密钥使用。正式分发时请保管好自己的签名密钥。
 
 ### 运行测试
 
@@ -176,7 +177,7 @@ zsh test.sh
 - Apple 本机识别和 Whisper 在 Mac 处理音频。主动选择 Apple 在线识别后，音频可能发送给 Apple。
 - 翻译会把正式原文发送给选定服务。开启上下文时，会额外发送前文及已有译文。
 - 点问答按钮时，才向独立配置的问答接口发送最近 15 段正式字幕及最近五分钟的背景。
-- 记录和待处理音频保存在 **~/Library/Application Support/TingQiao/**。成功识别并保存文字后，对应音频会删除。
+- 文字记录增量保存在 **~/Library/Application Support/TingQiao/** 下的 SQLite 数据库中。新收音暂存在内存里，识别成功后释放，退出后无法补跑。
 - Wi-Fi 字幕采用**局域网 HTTP**，配对链接包含凭据，请在可信网络中使用。蓝牙采用加密 GATT 特征和应用配对凭据。
 - 这份公开源码已排除个人设置、会议记录、配对数据、真实对话截图、个人设备测试报告与签名产物。
 

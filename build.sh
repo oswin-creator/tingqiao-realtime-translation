@@ -5,20 +5,28 @@ build_dir="${TINGQIAO_BUILD_DIR:-$project_dir/build}"
 module_cache="$project_dir/build/module-cache"
 app_dir="$build_dir/听桥.app"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources" "$module_cache"
-if [[ ! -f "$project_dir/Resources/AppIcon.icns" ]]; then zsh "$project_dir/Tools/make-icon.sh"; fi
 cp "$project_dir/Resources/Info.plist" "$app_dir/Contents/Info.plist"
 cp "$project_dir/Resources/phone.html" "$app_dir/Contents/Resources/phone.html"
 cp "$project_dir/Resources/terminology.json" "$app_dir/Contents/Resources/terminology.json"
+cp "$project_dir/Resources/melo-korean.json" "$app_dir/Contents/Resources/melo-korean.json"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d' "$app_dir/Contents/Resources/melo-korean.json"
 cp "$project_dir/Resources/wikidata.json" "$project_dir/Resources/wikidata.manifest.json" "$app_dir/Contents/Resources/"
 if [[ -f "$project_dir/Resources/AppIcon.icns" ]]; then cp "$project_dir/Resources/AppIcon.icns" "$app_dir/Contents/Resources/AppIcon.icns"; fi
-xcrun swiftc -file-prefix-map "$project_dir=." -swift-version 5 -O -parse-as-library -target arm64-apple-macosx14.0 -module-cache-path "$module_cache" -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker "$project_dir/Resources/Info.plist" "$project_dir"/Sources/*.swift -o "$app_dir/Contents/MacOS/TingQiao"
+xcrun swiftc -swift-version 5 -O -parse-as-library -target arm64-apple-macosx14.0 -module-cache-path "$module_cache" -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker "$project_dir/Resources/Info.plist" "$project_dir"/Sources/*.swift -o "$app_dir/Contents/MacOS/TingQiao"
 helper="$project_dir/build/whisper-engine/TingQiaoWhisper"
 if [[ ! -x "$helper" ]]; then print -u2 "先运行 ./build-whisper.sh 构建本机识别引擎"; exit 1; fi
 cp "$helper" "$app_dir/Contents/MacOS/TingQiaoWhisper"
-xcrun swiftc -file-prefix-map "$project_dir=." -swift-version 5 -O -parse-as-library -target arm64-apple-macosx14.0 -module-cache-path "$module_cache" "$project_dir/Sources/UpdateInstallation.swift" "$project_dir/Tools/Updater/main.swift" -o "$app_dir/Contents/MacOS/TingQiaoUpdater"
+xcrun swiftc -swift-version 5 -O -parse-as-library -target arm64-apple-macosx14.0 -module-cache-path "$module_cache" "$project_dir/Sources/UpdateInstallation.swift" "$project_dir/Tools/Updater/main.swift" -o "$app_dir/Contents/MacOS/TingQiaoUpdater"
 qwen_helper="$project_dir/build/qwen-engine/TingQiaoQwen"
 if [[ ! -x "$qwen_helper" ]]; then print -u2 "先运行 ./build-qwen.sh 构建 Qwen 识别引擎"; exit 1; fi
 cp "$qwen_helper" "$app_dir/Contents/MacOS/TingQiaoQwen"
+tts_dir="$project_dir/build/tts-engine"
+if [[ ! -x "$tts_dir/TingQiaoSherpaTTS" || "$project_dir/Tools/TTS/main.mm" -nt "$tts_dir/TingQiaoSherpaTTS" ||
+      "$project_dir/Tools/TTS/Korean.h" -nt "$tts_dir/TingQiaoSherpaTTS" || ! -x "$tts_dir/TingQiaoQwenTTS" ||
+      ! -f "$tts_dir/libsherpa-onnx-c-api.dylib" || ! -f "$tts_dir/libonnxruntime.dylib" ]]; then
+    zsh "$project_dir/build-tts.sh"
+fi
+cp "$tts_dir/"{TingQiaoSherpaTTS,TingQiaoQwenTTS,libsherpa-onnx-c-api.dylib,libonnxruntime.dylib} "$app_dir/Contents/MacOS/"
 [[ "$(shasum -a 256 "$project_dir/Resources/whisper-medium-vocab.bin" | cut -d ' ' -f 1)" == "49639ac8580c3985225c05981ed17f85c8d193ebeaaab3bde2a0cddc38d2eb56" ]] || { print -u2 "KomixV2 编码表校验失败"; exit 1; }
 cp "$project_dir/Resources/whisper-medium-vocab.bin" "$app_dir/Contents/Resources/"
 vad_library="$project_dir/build/whisper-engine/libTingQiaoVAD.dylib"

@@ -1,7 +1,6 @@
 #!/bin/zsh
 set -euo pipefail
 project_dir="${0:A:h}"
-zsh "$project_dir/scripts/fetch-android-deps.sh"
 mkdir -p "$project_dir/build/tests" "$project_dir/build/module-cache"
 xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_dir/build/module-cache" "$project_dir/Sources/Models.swift" "$project_dir/Sources/Terminology.swift" "$project_dir/Sources/Translation.swift" "$project_dir/Sources/SileroVAD.swift" "$project_dir/Sources/AudioCapture.swift" "$project_dir/Sources/MeetingRules.swift" "$project_dir/Sources/PhoneServer.swift" "$project_dir/Tests/CoreTests.swift" -o "$project_dir/build/tests/CoreTests"
 "$project_dir/build/tests/CoreTests" "$project_dir/build/tests"
@@ -34,12 +33,22 @@ xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_
 xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_dir/build/module-cache" "${sources[@]}" "$project_dir/Tests/RecognitionReviewTests.swift" -o "$project_dir/build/tests/RecognitionReviewTests"
 "$project_dir/build/tests/RecognitionReviewTests"
 
-xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_dir/build/module-cache" "$project_dir/Sources/Models.swift" "$project_dir/Sources/LocalModels.swift" "$project_dir/Sources/WhisperEngine.swift" "$project_dir/Tests/KomixVocabularyTests.swift" -o "$project_dir/build/tests/KomixVocabularyTests"
-(cd "$project_dir" && build/tests/KomixVocabularyTests)
-
 xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_dir/build/module-cache" "${sources[@]}" "$project_dir/Tests/ScrollRecoveryTests.swift" -o "$project_dir/build/tests/ScrollRecoveryTests"
 "$project_dir/build/tests/ScrollRecoveryTests"
 xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_dir/build/module-cache" "$project_dir/Sources/Models.swift" "$project_dir/Sources/LocalModels.swift" "$project_dir/Sources/WhisperEngine.swift" "$project_dir/Sources/ModelDownloader.swift" "$project_dir/Sources/UpdateInstallation.swift" "$project_dir/Sources/AppUpdates.swift" "$project_dir/Tests/AppUpdateTests.swift" -o "$project_dir/build/tests/AppUpdateTests"
 "$project_dir/build/tests/AppUpdateTests"
 xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_dir/build/module-cache" "$project_dir/Sources/DeferredWindowLayout.swift" "$project_dir/Tests/WindowResizeTests.swift" -o "$project_dir/build/tests/WindowResizeTests"
 "$project_dir/build/tests/WindowResizeTests"
+
+xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_dir/build/module-cache" \
+    "$project_dir"/Sources/{Models,LocalModels,ModelDownloader,Diagnostics,SpokenModels,SpokenSynthesis,SpokenOutput,SpokenPlayback}.swift \
+    "$project_dir/Tests/SpokenPlaybackTests.swift" -o "$project_dir/build/tests/SpokenPlaybackTests"
+"$project_dir/build/tests/SpokenPlaybackTests"
+
+xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_dir/build/module-cache" \
+    "${sources[@]}" "$project_dir/Tests/LiveCaptionRenderTests.swift" -o "$project_dir/build/tests/LiveCaptionRenderTests"
+"$project_dir/build/tests/LiveCaptionRenderTests"
+
+xcrun swiftc -swift-version 5 -O -parse-as-library -module-cache-path "$project_dir/build/module-cache" \
+    "$project_dir/Sources/Diagnostics.swift" "$project_dir/Tests/DiagnosticsTests.swift" -o "$project_dir/build/tests/DiagnosticsTests"
+"$project_dir/build/tests/DiagnosticsTests"

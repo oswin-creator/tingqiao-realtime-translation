@@ -101,6 +101,33 @@ import AVFoundation
         check(model.jobs.last?.recognitionFailures == 1, "alignment uncertainty consumes shared retry allowance")
         check(!model.commitRecognition(repetition, for: uncertain.id), "repetition on retry stops this segment")
         check(model.jobs.last?.stage == .blocked && model.jobs.last?.recognitionFailures == 2 && FileManager.default.fileExists(atPath: uncertain.url.path), "no third retry and full audio is preserved")
+        settings.language = MeetingLanguage.korean.rawValue
+        model.settings = settings
+        let koreanStore = try SessionStore(root: root.appendingPathComponent("Korean"))
+        let korean = AppModel(store: koreanStore, settings: settings, startBackgroundWork: false)
+        func koreanWindow(_ offset: Int) -> SpeechWindow {
+            SpeechWindow(id: UUID(), url: koreanStore.audio.appendingPathComponent("\(offset).wav"),
+                         date: now.addingTimeInterval(Double(offset)), overlap: false, isFinal: true, duration: 4)
+        }
+        let ignored = koreanWindow(0)
+        check(!korean.commitPreview(" 감사합니다.\n", window: ignored, epoch: korean.currentCaptureEpoch),
+              "standalone Korean thank-you does not appear as a preview")
+        korean.acceptCapturedAudio(url: ignored.url, date: ignored.date, overlap: false, epoch: korean.currentCaptureEpoch,
+                                   settings: settings, id: ignored.id, preview: "이전 임시 자막")
+        check(korean.commitRecognition("감사합니다.", for: ignored.id), "skip completes even after a preview")
+        check(korean.jobs.last?.stage == .done && korean.jobs.last?.original == "" && korean.allCaptions.isEmpty,
+              "skipped result has no caption or translation job")
+        let retained = ["감사합니다", "감사합니다!", "참석해 주셔서 감사합니다.", "감사합니다. 다음으로 넘어가겠습니다."]
+        for (index, text) in retained.enumerated() {
+            let window = koreanWindow(index + 1)
+            korean.acceptWindow(window, epoch: korean.currentCaptureEpoch, settings: settings)
+            check(korean.commitRecognition(text, for: window.id), "near matches and longer sentences still pass")
+        }
+        let next = korean.jobs.last!
+        let history = TranslationHistory.context(before: next, in: korean.jobs, limit: 4)
+        check(history.map(\.original) == Array(retained.dropLast()), "skipped result is absent from next translation's context")
+        check(!TranscriptExport.render(try koreanStore.load()).contains("原文：감사합니다.\n"),
+              "skipped result is absent from exported history after reload")
         let legacy = AudioJob(id: UUID(), sessionID: UUID(), created: now, audioFile: "legacy.wav", language: "ko-KR", localRecognition: true, overlap: true)
         let migrated = try JSONDecoder().decode(AudioJob.self, from: Data("{\"id\":\"\(legacy.id.uuidString)\",\"sessionID\":\"\(legacy.sessionID.uuidString)\",\"created\":0,\"audioFile\":\"legacy.wav\",\"language\":\"ko-KR\",\"localRecognition\":true,\"overlap\":true,\"stage\":\"recognize\",\"original\":\"\",\"translated\":\"\",\"attempts\":0,\"retryAfter\":0,\"error\":\"\"}".utf8))
         check(migrated.effectiveContextSampleCount == 8000, "old pending jobs retain the original half-second prefix")

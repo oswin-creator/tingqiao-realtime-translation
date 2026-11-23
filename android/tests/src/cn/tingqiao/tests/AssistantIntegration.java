@@ -38,8 +38,16 @@ public class AssistantIntegration extends Instrumentation {
                 View root = screen.getWindow().getDecorView();
                 View answer = find(root, "帮我回答"), explain = find(root, "解释刚才");
                 require(answer != null && explain != null && explain.getLeft() > answer.getRight(), "separate assistant buttons");
-                View font = find(root, "字号"), latest = find(root, "回到最新 ↓");
-                require(font != null && latest != null && latest.getLeft() > font.getRight(), "separate caption tools");
+                View font = find(root, "字号 24"), latest = find(root, "最新 ↓"), check = find(root, "检查连接");
+                if (font == null) {
+                    for (int size : new int[]{16,20,28,34,40}) {
+                        font = find(root,"字号 "+size);
+                        if (font != null) break;
+                    }
+                }
+                require(font != null && latest != null && check != null && check.getLeft() > font.getRight(), "separate caption tools");
+                check.performClick();
+                require(find(root, "未收到电脑回应，请检查蓝牙字幕") != null, "connection check reports disconnected state");
                 require(answer.performClick(), "open answer overlay");
                 require(find(root, "请先连接 Mac 的蓝牙字幕。") != null, "disconnected feedback");
                 try {

@@ -33,7 +33,8 @@ int main(int argc,char** argv){
         try{
             auto request = json::parse(line);
             const int skip = request.value("skip_samples", 0);
-            auto samples = recognition_audio(request.at("file"), skip);
+            auto samples = request.contains("pcm_bytes") ? recognition_pcm(std::cin, request.at("pcm_bytes").get<size_t>(), skip)
+                                                         : recognition_audio(request.at("file"), skip);
             // Remove only DC bias for the measurement, never modify audio sent to Whisper.
             double mean=0, power=0;
             for(float v:samples) mean+=v;

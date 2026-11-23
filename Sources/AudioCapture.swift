@@ -29,13 +29,15 @@ final class AudioSegmenter {
     private var complete = false
     private var latestPause = 0
     private let meetingRules: Bool
+    private let inMemory: Bool
     var onWindow: ((SpeechWindow) -> Void)?
     var onSegment: ((URL, Date, Bool) -> Void)?
     var onLevel: ((Double) -> Void)?
     var onFailure: ((String) -> Void)?
     var onVADStatus: ((String) -> Void)?
-    init(directory: URL, meetingRules: Bool = true, detector: VoiceActivityDetecting? = nil) {
+    init(directory: URL, meetingRules: Bool = true, detector: VoiceActivityDetecting? = nil, inMemory: Bool = false) {
         self.directory = directory; self.meetingRules = meetingRules; self.detector = detector
+        self.inMemory = inMemory
         samples.reserveCapacity(320000); pendingPCM.reserveCapacity(4096)
     }
     // Run on the sample queue before capture starts, not on the UI thread.
@@ -132,11 +134,8 @@ final class AudioSegmenter {
             else if elapsed >= MeetingRules.maximumWindow { emit(keepOverlap: silence < 0.4 || (speech != nil && energy > 0.0035)) }
             else if voiced >= 0.3, silence < 1.0, elapsed - lastPreview >= MeetingRules.previewInterval, onWindow != nil {
                 lastPreview = elapsed
-                if let url = write(contextSamples + samples, draft: true) {
-                    onWindow?(SpeechWindow(id: windowID, url: url, date: captureOrigin!.addingTimeInterval(Double(bufferStartSample) / 16000),
-                        overlap: !contextSamples.isEmpty, isFinal: false, duration: elapsed, contextSampleCount: contextSamples.count,
-                        audioStartSample: bufferStartSample - Int64(contextSamples.count), audioTimelineID: timelineID))
-                }
+                deliver(contextSamples + samples, id: windowID, start: bufferStartSample, prefix: contextSamples.count,
+                        duration: elapsed, final: false)
             }
             if voiced == 0 && energyVoiced == 0 && samples.count > 16000 {
                 let removed = samples.count - 8000
@@ -175,11 +174,29 @@ final class AudioSegmenter {
         voiced = 0; energyVoiced = 0; silence = 0
         windowID = UUID(); lastPreview = 0; complete = false; latestPause = 0
         if !remainder.isEmpty { voiced = Double(remainder.count) / 16000 }
-        guard hasSpeech, let url = write(prefix + captured, draft: false) else { return }
+        guard hasSpeech else { return }
+        deliver(prefix + captured, id: id, start: start, prefix: prefix.count, duration: Double(captured.count) / 16000, final: true)
+    }
+
+    private func deliver(_ captured: [Float], id: UUID, start: Int64, prefix: Int, duration: Double, final: Bool) {
         let date = (captureOrigin ?? Date()).addingTimeInterval(Double(start) / 16000)
-        onSegment?(url, date, !prefix.isEmpty)
-        onWindow?(SpeechWindow(id: id, url: url, date: date, overlap: !prefix.isEmpty, isFinal: true, duration: Double(captured.count) / 16000,
-            contextSampleCount: prefix.count, audioStartSample: start - Int64(prefix.count), audioTimelineID: timelineID))
+        let url: URL
+        var pcm: Data?
+        if inMemory {
+            url = directory.appendingPathComponent(id.uuidString + ".wav")
+            let samples = captured.map { sample in
+                guard sample.isFinite else { return Int16(0) }
+                let scaled = (min(1, max(-1, sample)) * 32768).rounded(.toNearestOrEven)
+                return Int16(clamping: Int(scaled)).littleEndian
+            }
+            pcm = samples.withUnsafeBytes { Data($0) }
+        } else {
+            guard let file = write(captured, draft: !final) else { return }
+            url = file
+            if final { onSegment?(url, date, prefix > 0) }
+        }
+        onWindow?(SpeechWindow(id: id, url: url, date: date, overlap: prefix > 0, isFinal: final, duration: duration,
+            contextSampleCount: prefix, audioStartSample: start - Int64(prefix), audioTimelineID: timelineID, pcm: pcm))
     }
     private func write(_ captured: [Float], draft: Bool) -> URL? {
         guard let buffer = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: AVAudioFrameCount(captured.count)), let channel = buffer.floatChannelData?[0] else { return nil }
@@ -205,13 +222,16 @@ final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptureA
     private var stream: SCStream?
     private var microphone: AVCaptureSession?
     private var observers: [NSObjectProtocol] = []
+    private var healthAt = ProcessInfo.processInfo.systemUptime
+    private var healthBuffers = 0
     private var epoch: UUID
     var onSegment: ((URL, Date, Bool, UUID) -> Void)?
     var onWindow: ((SpeechWindow, UUID) -> Void)?
     var onFailure: ((String) -> Void)?
+    var onAudioHealth: ((Int) -> Void)?
 
     init(directory: URL, epoch: UUID = UUID()) {
-        segmenter = AudioSegmenter(directory: directory); self.epoch = epoch
+        segmenter = AudioSegmenter(directory: directory, inMemory: true); self.epoch = epoch
         super.init()
         segmenter.onSegment = { [weak self] url, date, overlap in
             guard let self else { return }
@@ -269,6 +289,7 @@ final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptureA
             if #available(macOS 15.0, *) { config.captureMicrophone = false }
             let capture = SCStream(filter: filter, configuration: config, delegate: self)
             try capture.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
+            try capture.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
             stream = capture
             do { try await capture.startCapture() }
             catch { stream = nil; throw BridgeError("系统声音启动失败。请到系统设置 → 隐私与安全性 → 屏幕与系统音频录制，允许“听桥”，再重新打开软件。\n\(error.localizedDescription)", retryable: false) }
@@ -306,8 +327,17 @@ final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptureA
         await withCheckedContinuation { continuation in sampleQueue.async { self.segmenter.flush(); continuation.resume() } }
     }
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of outputType: SCStreamOutputType) {
-        if outputType == .audio { segmenter.append(sampleBuffer) }
+        if outputType == .audio { receive(sampleBuffer) }
     }
     func stream(_ stream: SCStream, didStopWithError error: Error) { onFailure?("系统声音连接中断：\(error.localizedDescription)") }
-    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) { segmenter.append(sampleBuffer) }
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) { receive(sampleBuffer) }
+    private func receive(_ buffer: CMSampleBuffer) {
+        healthBuffers += 1
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - healthAt >= 5 {
+            onAudioHealth?(healthBuffers)
+            healthBuffers = 0; healthAt = now
+        }
+        segmenter.append(buffer)
+    }
 }

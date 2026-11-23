@@ -30,16 +30,31 @@ struct CoreTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let job = AudioJob(id: UUID(), sessionID: UUID(), created: Date(), audioFile: "pending.wav", language: "ko-KR", localRecognition: true)
         try Data([1, 2, 3]).write(to: store.audio.appendingPathComponent(job.audioFile))
-        try store.save([job])
+        let legacyURL = root.appendingPathComponent("jobs.json")
+        let legacy = try JSONEncoder().encode([job])
+        try legacy.write(to: legacyURL)
         let restored = try store.load()
-        check(restored.count == 1 && restored[0].id == job.id && restored[0].language == "ko-KR", "persist and restore pending job")
+        check(restored == [job], "migrate pending job and every saved field")
+        check(try! Data(contentsOf: legacyURL) == legacy, "migration leaves original JSON untouched")
+        var recognized = job
+        recognized.original = "회의가 시작됩니다."
+        recognized.stage = .translate
+        try store.save([recognized])
+        let walURL = root.appendingPathComponent("jobs.sqlite3-wal")
+        let walSize = try walURL.resourceValues(forKeys: [.fileSizeKey]).fileSize
+        try store.save([recognized])
+        check(try! walURL.resourceValues(forKeys: [.fileSizeKey]).fileSize == walSize, "unchanged records do not add SQLite writes")
+        let reopened = try SessionStore(root: root)
+        check(try! reopened.load() == [recognized], "read the committed row after reopening, without reimporting legacy JSON")
         try Data([4]).write(to: store.audio.appendingPathComponent("orphan.wav"))
         let orphans = try store.recoverOrphanAudio(known: restored)
         check(orphans.count == 1 && orphans[0].lastPathComponent == "orphan.wav", "recover audio created before metadata journal")
         let corrupt = Data("not json".utf8)
-        try corrupt.write(to: root.appendingPathComponent("jobs.json"))
-        do { _ = try store.load(); fatalError("corrupt journal must throw") } catch { checks += 1 }
-        check(try! Data(contentsOf: root.appendingPathComponent("jobs.json")) == corrupt, "corrupt journal is not overwritten on read")
+        let corruptStore = try SessionStore(root: root.appendingPathComponent("corrupt"))
+        let corruptURL = corruptStore.root.appendingPathComponent("jobs.json")
+        try corrupt.write(to: corruptURL)
+        do { _ = try corruptStore.load(); fatalError("corrupt journal must throw") } catch { checks += 1 }
+        check(try! Data(contentsOf: corruptURL) == corrupt, "corrupt journal is not overwritten during migration")
 
         check(try! TranslationClient.endpoint("https://example.com/v1/").absoluteString == "https://example.com/v1/chat/completions", "base endpoint")
         check(try! TranslationClient.endpoint("https://example.com/chat/completions").path == "/chat/completions", "complete endpoint")

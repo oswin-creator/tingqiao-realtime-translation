@@ -1,6 +1,7 @@
 import Foundation
 import Security
 import LocalAuthentication
+import SQLite3
 
 enum MeetingMode: String, Codable, CaseIterable {
     case online = "线上会议", inPerson = "线下会议"
@@ -236,7 +237,7 @@ struct Caption: Codable, Identifiable, Equatable {
         return translated.isEmpty ? "正在翻译…" : translated
     }
 }
-struct AudioJob: Codable, Identifiable {
+struct AudioJob: Codable, Identifiable, Equatable {
     var id: UUID
     var sessionID: UUID
     var created: Date
@@ -342,19 +343,146 @@ final class SessionStore {
     let audio: URL
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private var database: OpaquePointer?
+    private var saved: [AudioJob] = []
     init(root: URL? = nil) throws {
         let override = ProcessInfo.processInfo.environment["TINGQIAO_DATA_DIR"].map { URL(fileURLWithPath: $0) }
         self.root = root ?? override ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("TingQiao")
         audio = self.root.appendingPathComponent("Audio", isDirectory: true)
         try FileManager.default.createDirectory(at: audio, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     }
+    deinit { if let database { sqlite3_close(database) } }
+
     func load() throws -> [AudioJob] {
-        let url = root.appendingPathComponent("jobs.json")
-        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
-        return try decoder.decode([AudioJob].self, from: Data(contentsOf: url))
+        try open()
+        return saved
     }
     func save(_ jobs: [AudioJob]) throws {
-        try encoder.encode(jobs).write(to: root.appendingPathComponent("jobs.json"), options: .atomic)
+        try open()
+        try writeChanges(jobs)
+    }
+
+    private func open() throws {
+        guard database == nil else { return }
+        let url = root.appendingPathComponent("jobs.sqlite3")
+        var handle: OpaquePointer?
+        let result = sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil)
+        guard let handle else { throw BridgeError("无法打开会议记录数据库。") }
+        database = handle
+        do {
+            try check(result)
+            try check(sqlite3_busy_timeout(handle, 1500))
+            try execute("PRAGMA journal_mode=WAL")
+            try execute("PRAGMA synchronous=FULL")
+            let version = try statement("PRAGMA user_version") { query -> Int32 in
+                try check(sqlite3_step(query), expected: SQLITE_ROW)
+                return sqlite3_column_int(query, 0)
+            }
+            switch version {
+            case 0:
+                let legacy = root.appendingPathComponent("jobs.json")
+                let jobs: [AudioJob]
+                if FileManager.default.fileExists(atPath: legacy.path) {
+                    jobs = try decoder.decode([AudioJob].self, from: Data(contentsOf: legacy))
+                } else { jobs = [] }
+                try transaction {
+                    try execute("CREATE TABLE jobs (id TEXT PRIMARY KEY, position INTEGER NOT NULL, payload BLOB NOT NULL)")
+                    try upsert(Array(jobs.enumerated()))
+                    try execute("PRAGMA user_version=1")
+                }
+                saved = jobs
+            case 1:
+                saved = try statement("SELECT payload FROM jobs ORDER BY position") { query in
+                    var jobs: [AudioJob] = []
+                    var result = sqlite3_step(query)
+                    while result == SQLITE_ROW {
+                        guard let bytes = sqlite3_column_blob(query, 0) else { throw BridgeError("会议记录数据不完整。") }
+                        let data = Data(bytes: bytes, count: Int(sqlite3_column_bytes(query, 0)))
+                        jobs.append(try decoder.decode(AudioJob.self, from: data))
+                        result = sqlite3_step(query)
+                    }
+                    try check(result, expected: SQLITE_DONE)
+                    return jobs
+                }
+            default:
+                throw BridgeError("当前版本无法读取这个会议记录数据库。")
+            }
+        } catch {
+            sqlite3_close(handle)
+            database = nil
+            throw error
+        }
+    }
+
+    private func writeChanges(_ jobs: [AudioJob]) throws {
+        guard jobs != saved else { return }
+        let old = Dictionary(uniqueKeysWithValues: saved.enumerated().map { ($0.element.id, $0) })
+        let changes = jobs.enumerated().filter { index, job in
+            guard let entry = old[job.id] else { return true }
+            return entry.offset != index || entry.element != job
+        }
+        let ids = Set(jobs.map(\.id))
+        let removed = saved.filter { !ids.contains($0.id) }
+        try transaction {
+            try upsert(changes)
+            try statement("DELETE FROM jobs WHERE id = ?") { query in
+                for job in removed {
+                    try bindID(job.id, to: query)
+                    try check(sqlite3_step(query), expected: SQLITE_DONE)
+                    try check(sqlite3_reset(query))
+                }
+            }
+        }
+        saved = jobs
+    }
+
+    private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+    private func bindID(_ id: UUID, to query: OpaquePointer) throws {
+        try check(sqlite3_bind_text(query, 1, id.uuidString, -1, transient))
+    }
+
+    private func upsert(_ jobs: [(offset: Int, element: AudioJob)]) throws {
+        try statement("""
+            INSERT INTO jobs (id, position, payload) VALUES (?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET position=excluded.position, payload=excluded.payload
+            """) { query in
+            for (index, job) in jobs {
+                let data = try encoder.encode(job)
+                try bindID(job.id, to: query)
+                try check(sqlite3_bind_int64(query, 2, Int64(index)))
+                try data.withUnsafeBytes { bytes in
+                    try check(sqlite3_bind_blob(query, 3, bytes.baseAddress, Int32(bytes.count), transient))
+                }
+                try check(sqlite3_step(query), expected: SQLITE_DONE)
+                try check(sqlite3_reset(query))
+            }
+        }
+    }
+
+    private func transaction(_ body: () throws -> Void) throws {
+        try execute("BEGIN IMMEDIATE")
+        do { try body(); try execute("COMMIT") }
+        catch { try? execute("ROLLBACK"); throw error }
+    }
+
+    private func execute(_ sql: String) throws {
+        try check(sqlite3_exec(database, sql, nil, nil, nil))
+    }
+
+    private func statement<T>(_ sql: String, _ body: (OpaquePointer) throws -> T) throws -> T {
+        var query: OpaquePointer?
+        try check(sqlite3_prepare_v2(database, sql, -1, &query, nil))
+        guard let query else { throw BridgeError("无法准备会议记录查询。") }
+        defer { sqlite3_finalize(query) }
+        return try body(query)
+    }
+
+    private func check(_ result: Int32, expected: Int32 = SQLITE_OK) throws {
+        guard result == expected else {
+            let detail = sqlite3_errmsg(database).map { String(cString: $0) } ?? String(result)
+            throw BridgeError("会议记录数据库：\(detail)")
+        }
     }
     func removeAudio(_ job: AudioJob) { try? FileManager.default.removeItem(at: audio.appendingPathComponent(job.audioFile)) }
     func permanentlyRemoveAudio(_ job: AudioJob) throws {

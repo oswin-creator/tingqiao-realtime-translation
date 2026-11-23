@@ -6,9 +6,11 @@ tools_dir="$sdk_dir/build-tools/36.0.0"
 platform_jar="$sdk_dir/platforms/android-35/android.jar"
 build_dir="$project_dir/build"
 java_dir="$(/usr/libexec/java_home -v 17)"
-zsh "$project_dir/../scripts/fetch-android-deps.sh"
 mkdir -p "$build_dir/classes" "$build_dir/dex"
-"$tools_dir/aapt" package -f -M "$project_dir/app/src/main/AndroidManifest.xml" -S "$project_dir/app/src/main/res" -A "$project_dir/app/src/main/assets" -I "$platform_jar" -F "$build_dir/resources.apk"
+mkdir -p "$build_dir/assets"
+cp -R "$project_dir/app/src/main/assets/." "$build_dir/assets/"
+cp "$project_dir/../Resources/phone.html" "$build_dir/assets/phone.html"
+"$tools_dir/aapt" package -f -M "$project_dir/app/src/main/AndroidManifest.xml" -S "$project_dir/app/src/main/res" -A "$build_dir/assets" -I "$platform_jar" -F "$build_dir/resources.apk"
 "$java_dir/bin/javac" --release 8 -classpath "$platform_jar:$project_dir/libs/zxing-core-3.5.3.jar" -d "$build_dir/classes" "$project_dir"/app/src/main/java/cn/tingqiao/companion/*.java
 "$java_dir/bin/jar" cf "$build_dir/classes.jar" -C "$build_dir/classes" .
 JAVA_HOME="$java_dir" "$tools_dir/d8" --lib "$platform_jar" --min-api 26 --output "$build_dir/dex" "$build_dir/classes.jar" "$project_dir/libs/zxing-core-3.5.3.jar"

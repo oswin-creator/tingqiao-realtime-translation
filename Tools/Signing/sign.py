@@ -15,7 +15,8 @@ if keychain:
     subprocess.run(["/usr/bin/security", "list-keychains", "-d", "user", "-s",
                     keychain, *[p for p in previous if p != keychain]], check=True)
 try:
-    for name in ("TingQiaoWhisper", "TingQiaoUpdater", "TingQiaoQwen", "libTingQiaoVAD.dylib"):
+    for name in ("TingQiaoWhisper", "TingQiaoUpdater", "TingQiaoQwen", "libTingQiaoVAD.dylib",
+                 "TingQiaoSherpaTTS", "TingQiaoQwenTTS", "libsherpa-onnx-c-api.dylib", "libonnxruntime.dylib"):
         subprocess.run(["/usr/bin/codesign", *options,
                         str(application / "Contents/MacOS" / name)], check=True)
     subprocess.run(["/usr/bin/codesign", *options, "--deep", "--identifier",

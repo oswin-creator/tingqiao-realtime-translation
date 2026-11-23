@@ -10,6 +10,7 @@ struct SpeechWindow {
     var contextSampleCount: Int = 0
     var audioStartSample: Int64? = nil
     var audioTimelineID: UUID? = nil
+    var pcm: Data? = nil
 }
 
 enum MeetingRules {

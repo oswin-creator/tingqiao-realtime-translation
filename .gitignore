@@ -53,3 +53,6 @@ __pycache__/
 /.serena/
 /core-*/
 CODEX交接汇报*.md
+
+# Local transcript database and transaction files
+jobs.sqlite3*

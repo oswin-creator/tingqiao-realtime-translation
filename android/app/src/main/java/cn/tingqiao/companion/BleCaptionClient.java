@@ -33,6 +33,9 @@ public final class BleCaptionClient {
     private final ArrayDeque<byte[]> writes=new ArrayDeque<>();
     private boolean writing=false, authenticated=false, wanted=false, notificationSetup=false, bonding=false, destroyed=false;
     private byte[] currentWrite;
+    private byte[] checkWrite;
+    private java.util.function.Consumer<Boolean> checkResult;
+    private boolean fastConnection;
     private String code="", token="", lastStream="";
     private long lastMessage=-1, lastPacketAt=0, lastControlAt=0, writeStartedAt=0, generation=0;
     private int reconnectAttempt=0, discoveryAttempts=0;
@@ -103,6 +106,8 @@ public final class BleCaptionClient {
     }
     public void disconnect(){wanted=false;generation++;stopScan();closeGatt();}
     private void closeGatt(){
+        finishCheck(false);
+        fastConnection=false;
         authenticated=false;bonding=false;notificationSetup=false;control=null;writing=false;currentWrite=null;writes.clear();frames.reset();lastStream="";lastMessage=-1;
         BluetoothGatt old=gatt;gatt=null;if(old!=null){try{old.disconnect();old.close();}catch(Exception ignored){}}
     }
@@ -129,7 +134,9 @@ public final class BleCaptionClient {
         });}
         public void onCharacteristicWrite(BluetoothGatt g,BluetoothGattCharacteristic characteristic,int status){main.post(()->{
             if(g!=gatt || !CONTROL.equals(characteristic.getUuid()))return;
-            String command=currentWrite==null?"":new String(currentWrite,StandardCharsets.UTF_8);android.util.Log.i("TingQiaoBLE","control "+command.split(":")[0]+" status="+status);writing=false;currentWrite=null;
+            String command=currentWrite==null?"":new String(currentWrite,StandardCharsets.UTF_8);android.util.Log.i("TingQiaoBLE","control "+command.split(":")[0]+" status="+status);
+            if(currentWrite!=null && currentWrite==checkWrite)finishCheck(status==BluetoothGatt.GATT_SUCCESS);
+            writing=false;currentWrite=null;
             if(status==BluetoothGatt.GATT_SUCCESS){lastControlAt=System.currentTimeMillis();if(command.startsWith("AUTH:") || command.startsWith("KEY:")){authenticated=true;reconnectAttempt=0;listener.status("蓝牙字幕已连接 · 等待新字幕");}nextWrite();}
             else if(command.startsWith("QA:") && command.length()==17){listener.assistantUnavailable(command.substring(5));nextWrite();}
             else if(status==5 || status==15){writes.clear();requestBond();}
@@ -175,11 +182,32 @@ public final class BleCaptionClient {
             String remembered=update.optString("pairingToken","");if(remembered.matches("[A-Za-z0-9_-]{16}")){token=remembered;listener.remember(selected,update);}
             String stream=update.getString("stream");
             if(!stream.equals(lastStream) && !"snapshot".equals(update.getString("kind"))){enqueue("SYNC");return;}
-            if(!stream.equals(lastStream) || result.message!=lastMessage){listener.update(update);lastStream=stream;lastMessage=result.message;}
             enqueue("ACK:"+result.message);
+            if(!stream.equals(lastStream) || result.message!=lastMessage){
+                boolean running=update.optBoolean("running");
+                if(running!=fastConnection){
+                    fastConnection=running;
+                    try{g.requestConnectionPriority(running?BluetoothGatt.CONNECTION_PRIORITY_HIGH:BluetoothGatt.CONNECTION_PRIORITY_BALANCED);}
+                    catch(SecurityException ignored){}
+                }
+                listener.update(update);lastStream=stream;lastMessage=result.message;
+            }
         }catch(Exception e){frames.reset();enqueue("SYNC");listener.status("正在补齐蓝牙字幕…");}
     }
     public void resume(){if(wanted && !authenticated && gatt==null)open();else if(authenticated)enqueue("SYNC");}
+    public void checkConnection(java.util.function.Consumer<Boolean> callback){
+        if(checkResult!=null)return;
+        if(!authenticated || gatt==null || control==null || writes.size()>30){callback.accept(false);return;}
+        byte[] probe="PING".getBytes(StandardCharsets.UTF_8);
+        checkWrite=probe;checkResult=callback;
+        writes.add(probe);nextWrite();
+        main.postDelayed(()->{if(checkWrite==probe){writes.remove(probe);finishCheck(false);}},3500);
+    }
+    private void finishCheck(boolean ok){
+        java.util.function.Consumer<Boolean> callback=checkResult;
+        checkWrite=null;checkResult=null;
+        if(callback!=null)callback.accept(ok);
+    }
     public boolean askAssistant(boolean answer, String id){
         if(!authenticated || gatt==null || control==null || !id.matches("[0-9a-f]{12}") || writes.size()>30)return false;
         enqueue("QA:"+(answer?"A:":"E:")+id);

@@ -17,6 +17,11 @@ final class AppModel: ObservableObject {
     @Published var isReconnecting = false
     let appUpdates = AppUpdateController()
     let audioLevel = AudioLevelPresentation()
+    let spoken = SpokenPlayback()
+    private var spokenOrder: [UUID] = []
+    private static let audioMemoryLimit = 64 * 1024 * 1024
+    private var pendingAudio: [UUID: Data] = [:]
+    private var pendingAudioBytes = 0
     var level: Double {
         get { audioLevel.value }
         set { audioLevel.value = newValue }
@@ -90,6 +95,7 @@ final class AppModel: ObservableObject {
     @Published var mainFollowsLatest = true
 
     private var store: SessionStore?
+    private var diagnostics: Diagnostics?
     private let speech = SpeechRecognition()
     private var capture: AudioCapture?
     private let server = PhoneServer()
@@ -191,6 +197,10 @@ final class AppModel: ObservableObject {
         do {
             let storage = try providedStore ?? SessionStore()
             store = storage
+            if startBackgroundWork {
+                diagnostics = Diagnostics(root: storage.root.appendingPathComponent("Diagnostics", isDirectory: true))
+                spoken.diagnostics = diagnostics
+            }
             terminologyService = TerminologyService(root: storage.root)
             jobs = try storage.load()
             for url in try storage.recoverOrphanAudio(known: jobs) {
@@ -301,6 +311,7 @@ final class AppModel: ObservableObject {
         let needsTranslation = settings.language != settings.targetLanguage.rawValue
         guard !needsTranslation || providerKeyReady else { notice = "请先处理 macOS 钥匙串提示，以读取已保存的翻译密钥；也可在翻译设置中重新读取。"; return }
         isStarting = true; notice = ""; settings.save()
+        diagnostics?.record(.captureStart, code: settings.mode == .inPerson ? 0 : 1)
         Task {
             do {
                 if let space = try? store.root.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage, space < 250_000_000 { throw BridgeError("可用磁盘空间不足 250 MB，请先清理空间。", retryable: false) }
@@ -315,10 +326,14 @@ final class AppModel: ObservableObject {
                 try await engine.start(settings: settings)
                 finalizedWindows.removeAll(); draftCaption = nil; draftText = ""
                 lastAudioAt = Date()
+                spoken.endMeeting()
+                spokenOrder.removeAll()
                 isRunning = true; startedAt = Date(); isStarting = false; notice = ""
+                diagnostics?.record(.captureReady)
                 sleepActivity = ProcessInfo.processInfo.beginActivity(options: [.idleSystemSleepDisabled, .userInitiatedAllowingIdleSystemSleep], reason: "听桥正在持续收音和翻译会议")
                 publishPhone(); pump()
             } catch {
+                diagnostics?.record(.captureFailure, code: (error as NSError).code)
                 if let capture { await capture.stop() }; capture = nil
                 isStarting = false; notice = error.localizedDescription
                 publishPhone()
@@ -329,6 +344,8 @@ final class AppModel: ObservableObject {
     func stop() {
         guard !isStarting, !isStopping else { return }
         isRunning = false; isStopping = true; isReconnecting = false
+        diagnostics?.record(.captureStop)
+        spokenOrder.removeAll(); spoken.endMeeting()
         captureRetry?.cancel(); captureRetry = nil
         let old = capture; capture = nil
         Task {
@@ -341,14 +358,22 @@ final class AppModel: ObservableObject {
 
     private func makeCapture(settings: AppSettings) -> AudioCapture {
         let engine = AudioCapture(directory: store!.audio, epoch: captureEpoch)
+        let diagnostics = self.diagnostics
+        engine.onAudioHealth = { count in diagnostics?.record(.captureAudio, value: count) }
         engine.segmenter.onLevel = { [weak self] value in Task { @MainActor in self?.level = value; self?.lastAudioAt = Date() } }
         engine.onWindow = { [weak self] window, epoch in
+            if window.isFinal {
+                diagnostics?.record(.audioReady, id: window.id, value: Int(window.duration * 1000))
+            }
             Task { @MainActor in
                 guard let self else { return }
                 self.acceptWindow(window, epoch: epoch, settings: settings)
             }
         }
-        engine.segmenter.onFailure = { [weak self] message in Task { @MainActor in self?.storageHealthy = false; self?.notice = message; self?.stop() } }
+        engine.segmenter.onFailure = { [weak self] message in
+            diagnostics?.record(.audioWriteFailure)
+            Task { @MainActor in self?.storageHealthy = false; self?.notice = message; self?.stop() }
+        }
         engine.segmenter.onVADStatus = { [weak self] message in Task { @MainActor in self?.vadStatus = message } }
         engine.onFailure = { [weak self] message in Task { @MainActor in self?.captureFailed(message) } }
         return engine
@@ -356,6 +381,7 @@ final class AppModel: ObservableObject {
 
     private func captureFailed(_ message: String) {
         guard isRunning, !isReconnecting else { return }
+        diagnostics?.record(.captureFailure)
         notice = message; isReconnecting = true; publishPhone()
         captureRetry = Task { [weak self] in
             guard let self else { return }
@@ -405,8 +431,8 @@ final class AppModel: ObservableObject {
         guard backgroundWorkEnabled, !terminating, storageHealthy, let store else { return }
         let now = Date()
         if !isRunning, !isStarting, !recognitionActive, !previewActive, now.timeIntervalSince(lastRecognitionAt) > 120 { WhisperEngine.shared.stop(); lastRecognitionAt = .distantFuture }
-        if isRunning, !isReconnecting, captureSettings?.mode == .inPerson, now.timeIntervalSince(lastAudioAt) > 12 {
-            lastAudioAt = now; captureFailed("麦克风超过 12 秒没有送来音频，正在重新连接。")
+        if isRunning, !isReconnecting, now.timeIntervalSince(lastAudioAt) > 12 {
+            lastAudioAt = now; captureFailed("暂未收到音频数据，正在重新连接。")
         }
         if isRunning, now.timeIntervalSince(lastDiskCheck) > 30 {
             lastDiskCheck = now
@@ -415,6 +441,7 @@ final class AppModel: ObservableObject {
             }
         }
         guard !isRecoveringPipeline else { return }
+        drainSpokenTranslations()
         if speechAuthorized, !recognitionActive, !previewActive, let job = jobs.first(where: { $0.deletedAt == nil && $0.stage == .recognize && $0.retryAfter <= now }) {
             recognitionActive = true; recognitionJobID = job.id
             let generation = pipelineGeneration
@@ -422,13 +449,15 @@ final class AppModel: ObservableObject {
                 defer { recognitionActive = false; recognitionJobID = nil; recognitionTask = nil; pump() }
                 do {
                     let retry = job.recognitionFailures > 0
+                    diagnostics?.record(.recognitionStart, id: job.id, value: retry ? 1 : 0)
                     let result = try await speech.recognizeResult(
                         url: store.audio.appendingPathComponent(job.audioFile), language: job.language,
                         localOnly: job.localRecognition, engine: job.recognitionEngine ?? .apple, retry: retry,
                         skipSamples: retry ? job.effectiveContextSampleCount : 0,
-                        withTimestamps: job.overlap && !retry
+                        withTimestamps: job.overlap && !retry, pcm: pendingAudio[job.id]
                     )
                     guard !Task.isCancelled, generation == pipelineGeneration else { return }
+                    diagnostics?.record(.recognitionResult, id: job.id)
                     lastRecognitionAt = Date()
                     _ = commitRecognition(result, for: job.id, generation: generation)
                 } catch { if generation == pipelineGeneration { failed(job.id, error: error) } }
@@ -459,8 +488,10 @@ final class AppModel: ObservableObject {
                 do {
                     let hint = useHints ? await terminologyService?.hint(text: job.original, source: MeetingLanguage(rawValue: job.language)?.translationCode ?? job.language, target: job.resolvedTargetLanguage.translationCode, recent: recentTerms, topic: "", now: job.created, memory: memory, selectedDomains: selectedDomains) : nil
                     guard !Task.isCancelled, generation == pipelineGeneration else { return }
+                    diagnostics?.record(.translationStart, id: job.id)
                     let translation = try await client.translate(job.original, language: job.language, targetLanguage: job.resolvedTargetLanguage, context: context, terminology: hint)
                     guard !Task.isCancelled, generation == pipelineGeneration else { return }
+                    diagnostics?.record(.translationResult, id: job.id)
                     _ = commitTranslation(translation, for: job.id, generation: generation)
                 } catch { if generation == pipelineGeneration { failed(job.id, error: error) } }
             }
@@ -470,6 +501,7 @@ final class AppModel: ObservableObject {
         guard !(error is CancellationError), !Task.isCancelled,
               let index = jobs.firstIndex(where: { $0.id == id && $0.deletedAt == nil }),
               jobs[index].stage == .recognize || jobs[index].stage == .translate else { return }
+        diagnostics?.record(.jobFailure, id: id, value: jobs[index].stage == .recognize ? 0 : 1, code: (error as NSError).code)
         if jobs[index].stage == .recognize {
             jobs[index].attempts = jobs[index].recognitionFailures + 1
             let canRetry = jobs[index].attempts == 1 && (error as? BridgeError)?.retryable != false
@@ -493,8 +525,18 @@ final class AppModel: ObservableObject {
     }
     @discardableResult private func persist() -> Bool {
         guard storageHealthy else { return false }
-        do { try store?.save(jobs); return true }
+        let started = ProcessInfo.processInfo.systemUptime
+        diagnostics?.record(.saveStart, value: jobs.count)
+        do {
+            let durableJobs = pendingAudio.isEmpty ? jobs : jobs.filter {
+                pendingAudio[$0.id] == nil || !$0.original.isEmpty || $0.stage == .done
+            }
+            try store?.save(durableJobs)
+            diagnostics?.record(.saveEnd, value: Int((ProcessInfo.processInfo.systemUptime - started) * 1000))
+            return true
+        }
         catch {
+            diagnostics?.record(.saveFailure, code: (error as NSError).code)
             storageHealthy = false; notice = "会议内容保存失败，已停止继续收音。原始片段仍保留：\(error.localizedDescription)"
             if isRunning { stop() }
             return false
@@ -521,6 +563,7 @@ final class AppModel: ObservableObject {
     }
     func forgetPhone(_ id: String) { bluetooth.forget(id) }
     private func publishPhone() {
+        if phoneEnabled || bluetoothEnabled { diagnostics?.record(.phonePublishStart) }
         let phoneCaptions = captions.suffix(80).map { caption in
             // Older phone apps display this slot as the caption's second line.
             guard let recognitionStatus = caption.recognitionStatus else { return caption }
@@ -532,6 +575,7 @@ final class AppModel: ObservableObject {
         let snapshot = PhoneSnapshot(status: status, running: isRunning && !isReconnecting, captions: phoneCaptions, pending: pendingCount)
         server.publish(snapshot)
         if bluetoothEnabled { bluetooth.publish(snapshot) }
+        if phoneEnabled || bluetoothEnabled { diagnostics?.record(.phonePublishEnd) }
     }
     func copyPhoneURL() { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(phoneURL, forType: .string) }
 
@@ -662,6 +706,27 @@ final class AppModel: ObservableObject {
         catch { notice = "导出失败：\(error.localizedDescription)" }
     }
     func openDataFolder() { if let store { NSWorkspace.shared.open(store.root) } }
+    func exportDiagnostics() {
+        guard let diagnostics else { notice = "故障记录暂不可用。"; return }
+        diagnostics.record(.userMarker)
+        let panel = NSSavePanel()
+        panel.title = "导出故障记录"
+        panel.message = "包含应用版本、运行事件和可用的卡顿采样。"
+        panel.nameFieldStringValue = "听桥故障记录-\(Date().formatted(.iso8601.year().month().day())).txt"
+        panel.allowedContentTypes = [.plainText]
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor in
+                do {
+                    let report = try await diagnostics.report()
+                    try report.write(to: url, atomically: true, encoding: .utf8)
+                    self.notice = "故障记录已导出。"
+                } catch {
+                    self.notice = "无法导出故障记录。"
+                }
+            }
+        }
+    }
     func refreshTerminology() async {
         guard let terminologyService else { return }
         let result = await terminologyService.load()
@@ -725,6 +790,8 @@ final class AppModel: ObservableObject {
             jobs[index].deletedAt = date
         }
         guard persist() else { jobs = old; return }
+        spokenOrder.removeAll { ids.contains($0) }
+        spoken.remove(ids)
         if let id = recognitionJobID, ids.contains(id) { recognitionTask?.cancel() }
         for id in ids { translationTasks[id]?.cancel() }
         if let draftCaption, ids.contains(draftCaption.id) { self.draftCaption = nil; draftText = "" }
@@ -753,6 +820,7 @@ final class AppModel: ObservableObject {
             for job in jobs where job.deletedAt != nil { try store.permanentlyRemoveAudio(job) }
             let old = jobs; jobs.removeAll { $0.deletedAt != nil }
             guard persist() else { jobs = old; return }
+            for job in old where job.deletedAt != nil { releaseAudio(job.id) }
             notice = "最近清除的记录已永久删除。"
         } catch { notice = "删除音频失败，记录已保留：\(error.localizedDescription)" }
     }
@@ -784,12 +852,14 @@ final class AppModel: ObservableObject {
                 pump()
             }
             do {
-                let result = try await speech.recognizeResult(url: window.url, language: settings.language, localOnly: settings.localRecognition, engine: settings.recognitionEngine, withTimestamps: window.overlap)
+                diagnostics?.record(.previewStart, id: window.id)
+                let result = try await speech.recognizeResult(url: window.url, language: settings.language, localOnly: settings.localRecognition, engine: settings.recognitionEngine, withTimestamps: window.overlap, pcm: window.pcm)
                 guard !Task.isCancelled, generation == pipelineGeneration else { return }
+                diagnostics?.record(.previewResult, id: window.id)
                 lastRecognitionAt = Date()
                 _ = commitPreview(result, window: window, epoch: epoch)
             } catch {
-                // Preview failures never block or delete the journalled final audio.
+                if !Task.isCancelled { diagnostics?.record(.previewFailure, id: window.id, code: (error as NSError).code) }
             }
         }
     }
@@ -814,6 +884,11 @@ final class AppModel: ObservableObject {
             sharedSamples: shared, maximumDuration: maximumDuration) else { throw BridgeError("正在确认接续音频中的新内容。") }
         return resolved
     }
+    private func skipsRecognition(_ text: String, language: String) -> Bool {
+        language == MeetingLanguage.korean.rawValue
+            && text.trimmingCharacters(in: .whitespacesAndNewlines) == "감사합니다."
+    }
+
     @discardableResult func commitPreview(_ text: String, window: SpeechWindow, epoch: UUID) -> Bool {
         commitPreview(RecognitionResult(text: text), window: window, epoch: epoch)
     }
@@ -823,7 +898,9 @@ final class AppModel: ObservableObject {
             language: captureSettings?.language ?? settings.language, localRecognition: settings.localRecognition, overlap: window.overlap)
         draft.contextSampleCount = window.contextSampleCount; draft.audioStartSample = window.audioStartSample
         draft.newAudioSampleCount = Int((window.duration * 16000).rounded()); draft.audioTimelineID = window.audioTimelineID
-        guard let text = try? recognitionText(result, for: draft), !text.isEmpty else { return false }
+        guard !skipsRecognition(result.text, language: draft.language),
+              let text = try? recognitionText(result, for: draft), !text.isEmpty,
+              !skipsRecognition(text, language: draft.language) else { return false }
         if draftWindowID != window.id { draftWindowID = window.id; draftStability = DraftStability() }
         draftText = draftStability.update(text)
         draftCaption = Caption(isDraft: true, id: window.id, date: window.date, original: draftText, translated: "")
@@ -832,6 +909,10 @@ final class AppModel: ObservableObject {
     }
     func acceptCapturedAudio(url: URL, date: Date, overlap: Bool, epoch: UUID, settings: AppSettings, id: UUID = UUID(), preview: String? = nil, window: SpeechWindow? = nil) {
         guard epoch == captureEpoch else { try? FileManager.default.removeItem(at: url); return }
+        if let pcm = window?.pcm {
+            if let old = pendingAudio.updateValue(pcm, forKey: id) { pendingAudioBytes -= old.count }
+            pendingAudioBytes += pcm.count
+        }
         var job = AudioJob(id: id, sessionID: sessionID, created: date, audioFile: url.lastPathComponent, language: settings.language,
             localRecognition: settings.localRecognition, targetLanguage: settings.targetLanguage, recognitionEngine: settings.recognitionEngine,
             terminologyDomains: settings.terminologyDomains, previewText: preview, overlap: overlap)
@@ -840,7 +921,17 @@ final class AppModel: ObservableObject {
             job.newAudioSampleCount = Int((window.duration * 16000).rounded()); job.audioTimelineID = window.audioTimelineID
         }
         jobs.append(job)
-        persist(); publishPhone(); pump()
+        if isRunning && spoken.enabled { spokenOrder.append(id) }
+        if window?.pcm == nil { persist() }
+        publishPhone(); pump()
+        if isRunning, pendingAudioBytes >= Self.audioMemoryLimit {
+            notice = "待识别音频暂存已满，已停止收音。可重试待处理内容，或清除不需要的片段。"
+            stop()
+        }
+    }
+
+    private func releaseAudio(_ id: UUID) {
+        if let pcm = pendingAudio.removeValue(forKey: id) { pendingAudioBytes -= pcm.count }
     }
     @discardableResult func commitRecognition(_ text: String, for id: UUID, generation: Int? = nil) -> Bool {
         commitRecognition(RecognitionResult(text: text), for: id, generation: generation)
@@ -852,17 +943,25 @@ final class AppModel: ObservableObject {
             jobs[index].recognitionSuspected = true
             failed(id, error: BridgeError("识别内容疑似重复。")); return false
         }
-        let text: String
-        do { text = try recognitionText(result, for: jobs[index]) }
+        let language = jobs[index].language
+        let resolved: String
+        do {
+            resolved = skipsRecognition(result.text, language: language) ? result.text
+                : try recognitionText(result, for: jobs[index])
+        }
         catch { failed(id, error: error); return false }
-        if text.isEmpty, jobs[index].recognitionFailures > 0 || jobs[index].previewText?.isEmpty == false {
+        if resolved.isEmpty, jobs[index].recognitionFailures > 0 || jobs[index].previewText?.isEmpty == false {
             failed(id, error: BridgeError("识别未返回可用文字。")); return false
         }
+        let text = skipsRecognition(resolved, language: language) ? "" : resolved
         jobs[index].original = text
         jobs[index].previewText = nil; jobs[index].recognitionSuspected = false
         jobs[index].stage = text.isEmpty ? .done : .translate
         jobs[index].attempts = 0; jobs[index].repetitionRetries = nil; jobs[index].error = ""
-        if persist() { store?.removeAudio(jobs[index]) }
+        if persist() {
+            if pendingAudio[id] != nil { releaseAudio(id) }
+            else { store?.removeAudio(jobs[index]) }
+        }
         publishPhone(); return true
     }
     @discardableResult func commitTranslation(_ text: String, for id: UUID, generation: Int? = nil) -> Bool {
@@ -870,8 +969,31 @@ final class AppModel: ObservableObject {
         guard let index = jobs.firstIndex(where: { $0.id == id && $0.deletedAt == nil && $0.stage == .translate }) else { return false }
         if RepeatedText.containsTranslationRun(text) { recoverRepeatedTranslation(jobID: id); return false }
         jobs[index].translated = text; jobs[index].stage = .done; jobs[index].error = ""
-        persist(); publishPhone(); return true
+        persist(); publishPhone()
+        drainSpokenTranslations()
+        return true
     }
+
+    func setSpokenEnabled(_ value: Bool) {
+        spokenOrder.removeAll()
+        spoken.setEnabled(value)
+    }
+
+    private func drainSpokenTranslations() {
+        guard isRunning, spoken.enabled else { return }
+        while let id = spokenOrder.first {
+            guard let job = jobs.first(where: { $0.id == id && $0.deletedAt == nil }) else {
+                spokenOrder.removeFirst()
+                continue
+            }
+            guard job.stage == .done || job.stage == .blocked else { return }
+            spokenOrder.removeFirst()
+            if job.stage == .done {
+                spoken.offer(id: id, text: job.translated, language: job.resolvedTargetLanguage)
+            }
+        }
+    }
+
     private func recoverRepeatedTranslation(jobID: UUID) {
         guard !terminating, !isRecoveringPipeline, storageHealthy,
               let index = jobs.firstIndex(where: { $0.id == jobID && $0.deletedAt == nil }) else { return }
@@ -932,6 +1054,7 @@ final class AppModel: ObservableObject {
     func waitForPipelineRecovery() async { await pipelineRecovery?.value }
     func shutdown() async {
         terminating = true; isRunning = false
+        spoken.shutdown()
         assistantTask?.cancel()
         timer?.invalidate(); captureRetry?.cancel(); pipelineRecovery?.cancel()
         await capture?.stop(); capture = nil
@@ -940,6 +1063,7 @@ final class AppModel: ObservableObject {
         previewTask?.cancel(); WhisperEngine.shared.stop()
         persist(); server.stop(); bluetooth.stop()
         if let activity = sleepActivity { ProcessInfo.processInfo.endActivity(activity); sleepActivity = nil }
+        await diagnostics?.finish()
     }
     func updateFloatingAppearance() {
         floating?.alphaValue = 1

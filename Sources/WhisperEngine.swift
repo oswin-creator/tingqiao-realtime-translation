@@ -31,17 +31,19 @@ final class WhisperEngine: @unchecked Sendable {
         try await recognizeResult(url: url, language: language, retry: retry, engine: engine).text
     }
     func recognizeResult(url: URL, language: String, retry: Bool = false, engine: RecognitionEngine = .whisperTurbo,
-                         skipSamples: Int = 0, withTimestamps: Bool = false) async throws -> RecognitionResult {
+                         skipSamples: Int = 0, withTimestamps: Bool = false, pcm: Data? = nil) async throws -> RecognitionResult {
         guard let source = MeetingLanguage(rawValue: language) else { throw BridgeError("识别引擎不支持所选的原文语言。", retryable: false) }
-        let request: [String: Any] = ["file": url.path, "language": source.speechCode, "retry": retry,
-                                    "skip_samples": max(0, skipSamples), "with_timestamps": withTimestamps]
-        return try await perform(JSONSerialization.data(withJSONObject: request), engine: engine)
+        var request: [String: Any] = ["language": source.speechCode, "retry": retry,
+                                      "skip_samples": max(0, skipSamples), "with_timestamps": withTimestamps]
+        if let pcm { request["pcm_bytes"] = pcm.count }
+        else { request["file"] = url.path }
+        return try await perform(JSONSerialization.data(withJSONObject: request), engine: engine, pcm: pcm)
     }
     func stop() {
         lock.lock(); let old = process; process = nil; lock.unlock()
         if old?.isRunning == true { old?.terminate() }
     }
-    private func perform(_ request: Data?, engine: RecognitionEngine) async throws -> RecognitionResult {
+    private func perform(_ request: Data?, engine: RecognitionEngine, pcm: Data? = nil) async throws -> RecognitionResult {
         try Task.checkCancellation()
         let cancellation = Cancellation()
         return try await withTaskCancellationHandler {
@@ -54,6 +56,7 @@ final class WhisperEngine: @unchecked Sendable {
                             try cancellation.check()
                             guard let request else { continuation.resume(returning: RecognitionResult(text: "")); return }
                             try self.input?.write(contentsOf: request + Data([10]))
+                            if let pcm { try self.input?.write(contentsOf: pcm) }
                             let result = try self.readJSON()
                             guard let text = result["text"] as? String else { throw BridgeError("\(engine.shortTitle) 本机识别失败，音频已保留。") }
                             let spans = (result["words"] as? [[String: Any]] ?? []).compactMap { word -> RecognitionSpan? in
@@ -104,6 +107,7 @@ final class WhisperEngine: @unchecked Sendable {
         do { try p.run(); process = p; loadedEngine = engine; lock.unlock() }
         catch { lock.unlock(); throw error }
         toEngine.fileHandleForReading.closeFile(); fromEngine.fileHandleForWriting.closeFile()
+        if let input { _ = fcntl(input.fileDescriptor, F_SETNOSIGPIPE, 1) }
         guard try readJSON()["ready"] as? Bool == true else { throw BridgeError("\(engine.shortTitle) 模型无法加载，请重新导入完整模型。", retryable: false) }
     }
     private func readJSON() throws -> [String: Any] {

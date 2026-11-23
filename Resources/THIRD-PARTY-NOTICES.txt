@@ -21,3 +21,20 @@ https://huggingface.co/handy-computer/Qwen3-ASR-1.7B-gguf
 Whisper Medium KomixV2 由 seastar105 提供；用户从原作者仓库下载，应用在本机转换格式，模型权重不随应用分发。
 https://huggingface.co/seastar105/whisper-medium-komixv2
 whisper-medium-vocab.bin 仅含 Whisper medium 的参数布局、mel 滤波器与词元表，不含语音识别权重；参数布局与 mel 滤波器取自 whisper.cpp 的 for-tests-ggml-medium.bin；词元按原作者 vocab.json 的原始字节生成，沿用 Whisper / whisper.cpp 的 MIT 许可。
+本地语音播报的 Kokoro 与 MeloTTS 引擎使用 Sherpa-ONNX v1.13.6（Apache-2.0）和 ONNX Runtime 1.27.1（MIT）。模型包由 Sherpa-ONNX 提供，按需下载。
+https://github.com/k2-fsa/sherpa-onnx/tree/v1.13.6
+https://github.com/microsoft/onnxruntime/tree/v1.27.1
+Kokoro-82M-v1.1-zh 由 hexgrad 提供（Apache-2.0），MeloTTS-Chinese 由 MyShell 提供（MIT）。模型包中的许可随模型下载。
+https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh
+https://huggingface.co/myshell-ai/MeloTTS-Chinese
+Qwen3-TTS 使用 speech.cpp v0.9.0（MIT，含 MIT 许可的 ggml）。Qwen 原始模型与 GGUF 转换权重采用 Apache-2.0，由用户按需下载。
+https://github.com/nyosegawa/speech.cpp/tree/v0.9.0
+https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice
+https://huggingface.co/sakasegawa/Qwen3-TTS-12Hz-0.6B-CustomVoice-GGUF
+https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
+https://huggingface.co/sakasegawa/Qwen3-TTS-12Hz-1.7B-CustomVoice-GGUF
+MeloTTS 韩语原始权重由 MyShell 提供（MIT），按需下载 MiaoMint/MeloTTS-ONNX 的转换权重，不随安装包分发。ONNX 转换省略 BERT 特征，音色与原始实现可能不同。
+https://huggingface.co/myshell-ai/MeloTTS-Korean
+https://huggingface.co/MiaoMint/MeloTTS-ONNX
+韩语发音处理使用 g2pkk 0.1.2 / g2pK 的发音规则（Apache-2.0），在本机执行；不包含其依赖的形态分析器。规则与许可见 Resources/melo-korean.json 和 docs/licenses/g2pkk-LICENSE.txt。
+https://github.com/harmlessman/g2pkk

@@ -1,5 +1,6 @@
 import Foundation
 import Speech
+import AVFoundation
 
 @MainActor
 final class SpeechRecognition {
@@ -39,11 +40,34 @@ final class SpeechRecognition {
     }
 
     func recognizeResult(url: URL, language: String, localOnly: Bool, engine: RecognitionEngine = .apple,
-                         retry: Bool = false, skipSamples: Int = 0, withTimestamps: Bool = false) async throws -> RecognitionResult {
+                         retry: Bool = false, skipSamples: Int = 0, withTimestamps: Bool = false, pcm: Data? = nil) async throws -> RecognitionResult {
         if engine.isLocalModel {
             guard engine.supports(language) else { throw BridgeError("Whisper Medium KomixV2 用于韩语识别，请选择韩语或其他识别引擎。", retryable: false) }
             return try await WhisperEngine.shared.recognizeResult(url: url, language: language, retry: retry, engine: engine,
-                skipSamples: skipSamples, withTimestamps: withTimestamps)
+                skipSamples: skipSamples, withTimestamps: withTimestamps, pcm: pcm)
+        }
+        if let pcm {
+            let frames = pcm.count / MemoryLayout<Int16>.size
+            guard skipSamples >= 0, skipSamples < frames,
+                  let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: false),
+                  let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames - skipSamples)),
+                  let channel = buffer.int16ChannelData?[0] else {
+                throw BridgeError("这段音频没有可供识别的新内容。", retryable: false)
+            }
+            buffer.frameLength = buffer.frameCapacity
+            pcm.withUnsafeBytes { source in
+                if let address = source.baseAddress {
+                    memcpy(channel, address.advanced(by: skipSamples * 2), (frames - skipSamples) * 2)
+                }
+            }
+            if #available(macOS 26.0, *), try await usesModernSpeech(language: language, localOnly: localOnly) {
+                return RecognitionResult(text: try await ModernSpeech.recognize(buffer: buffer, language: language))
+            }
+            let request = SFSpeechAudioBufferRecognitionRequest()
+            return RecognitionResult(text: try await recognize(request: request, language: language, localOnly: localOnly) {
+                request.append(buffer)
+                request.endAudio()
+            })
         }
         let input = try await Task.detached { try RecognitionAudio.croppedInput(url, skipping: skipSamples) }.value
         defer { if input != url { try? FileManager.default.removeItem(at: input) } }
@@ -58,10 +82,15 @@ final class SpeechRecognition {
         if #available(macOS 26.0, *), try await usesModernSpeech(language: language, localOnly: localOnly) {
             return try await ModernSpeech.recognize(url: url, language: language)
         }
+        return try await recognize(request: SFSpeechURLRecognitionRequest(url: url), language: language, localOnly: localOnly)
+    }
+
+    private func recognize(request: SFSpeechRecognitionRequest, language: String, localOnly: Bool,
+                           feed: () -> Void = {}) async throws -> String {
+        try Task.checkCancellation()
         guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: language)) else { throw BridgeError("语音识别语言不可用。", retryable: false) }
         guard recognizer.isAvailable else { throw BridgeError("系统语音识别暂不可用，稍后自动重试。") }
         if localOnly && !recognizer.supportsOnDeviceRecognition { throw BridgeError("请下载系统识别语言，或在设置中关闭“只在本机识别”。", retryable: false) }
-        let request = SFSpeechURLRecognitionRequest(url: url)
         request.shouldReportPartialResults = false
         request.requiresOnDeviceRecognition = localOnly
         request.taskHint = .dictation
@@ -86,6 +115,7 @@ final class SpeechRecognition {
                         }
                     }
                 }
+                feed()
             }
         } onCancel: { Task { @MainActor [weak self] in self?.finish(.failure(CancellationError()), id: id) } }
     }
